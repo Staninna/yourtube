@@ -77,7 +77,7 @@ reference the Activity registers and clears; the media session reaches the WebVi
 | Situation | Result |
 |---|---|
 | Playing, video visible, PiP allowed by setting, device supports PiP | Enter PiP. The media session drives PiP's play/pause. |
-| User closes the PiP window or swipes the task away | Playback stops, session released (Activity destroyed). |
+| User closes the PiP window or swipes the task away | Playback pauses and the session is released. Closing PiP only stops the Activity (stage 0 finding e), so "PiP ended while the Activity is stopped" is detected and treated as close. |
 | Playing, PiP not allowed / not supported / Manual | Background audio with the media notification. |
 | Screen off while in the app | Background audio. |
 | Paused when leaving | Session kept in the notification for the grace period, then released. |
@@ -112,7 +112,8 @@ grace period (10 min), then stops. It is only ever started while the Activity is
   which waits for `DOMContentLoaded`. Scripts are re-registered (`ScriptHandler.remove()` + add) when
   settings change. Fallback: inject on page start/finish (and skip the fingerprint script there).
 - No interval timers. Navigation comes from a `pushState`/`replaceState`/`popstate` hook plus
-  YouTube's navigation events; playback from media events (`play`, `pause`, `ended`, `timeupdate`,
+  `state-navigateend` on `window` (the only YouTube navigation event m.youtube.com fires, per stage 0);
+  playback from media events (`play`, `pause`, `ended`, `timeupdate`,
   `loadedmetadata`, `emptied`).
 - Navigation policy: YouTube origins, Google consent, and `www.google.com/sorry` (bot-check captcha)
   load in-app; everything else opens externally.
@@ -120,8 +121,9 @@ grace period (10 min), then stops. It is only ever started while the Activity is
 ### Page identity
 
 - `PageIdentity` in Kotlin, unit-tested: derives type/id/channelId from the URL plus raw facts.
-- Video facts come from the player (`movie_player.getVideoData()` / `getPlayerResponse()`), accepted
-  only when their video id equals the URL's `v`. `og:*`/canonical are accepted only when they match
+- Video facts come from `movie_player.getPlayerResponse().videoDetails` (the only current source of
+  the channel id after SPA navigation, per stage 0), accepted only when their video id equals the
+  URL's `v`. Every `/@handle` page needs `ChannelResolver`, whose HTTP fetch sends `SOCS`. `og:*`/canonical are accepted only when they match
   the current URL. `ytInitialData` is never used after the first load.
 - Channel id and avatar from a single native `ChannelResolver`: HTTP GET of the mobile channel page
   (mobile UA + consent cookie), read the canonical `UC` id and `og:image`; bounded concurrency (2),
@@ -166,6 +168,11 @@ grace period (10 min), then stops. It is only ever started while the Activity is
 - PiP: params kept current while playing (`setAutoEnterEnabled` per D4, aspect ratio clamped,
   `sourceRectHint` from the video rect converted from CSS px). On entering PiP hide Compose chrome and
   inject video-fill CSS; restore on exit. Play/pause in PiP comes from the media session.
+- Stage 0 amendments: Chromium pauses media when the WebView's window becomes invisible (Home,
+  screen off), so the WebView subclass overrides `onWindowVisibilityChanged` to always report
+  visible while background playback is allowed. YouTube pauses itself when the window shrinks to PiP
+  size, so the early script pins `window.outerWidth`/`outerHeight` to their full-size values; the
+  PiP fill CSS raises `#movie_player` and hides YouTube's drawer and top bar instead of using `vh`.
 - No notification-permission prompt (media-session notifications are exempt on Android 13+).
 - `ACTION_AUDIO_BECOMING_NOISY` pauses; audio focus verified in the spike.
 - Fullscreen: immersive (system bars hidden), rotation follows the video's aspect and returns, back
@@ -182,7 +189,8 @@ grace period (10 min), then stops. It is only ever started while the Activity is
   before anything touches WebView (asserted), then delete other `app_webview_*` dirs. A reroll uses
   `deleteBrowsingData` on `WebStorage.getInstance()` when `DELETE_BROWSING_DATA` is supported;
   otherwise it restarts the process and relaunches into the same URL so the identity is really fresh.
-- **Seeding** before the first load (waiting for the cookie callbacks): `SOCS` consent, `PREF` with
+- **Seeding** before the first load (waiting for the cookie callbacks): `SOCS` consent (the
+  reject-all value recorded in the stage 0 findings; `SOCS=CAI` also works), `PREF` with
   theme and hl/gl from the device locale, and an allowlist of non-identifying player preferences
   (quality, speed, captions on/off and language, autoplay) snapshotted from the previous identity and
   re-applied by the early script.
@@ -230,7 +238,7 @@ its own commit.
 0. **Spike**: bump dependencies (androidx.webkit, media3, Compose BOM with Expressive); a debug
    feature-probe screen; confirm on the emulator: signed-out home content, inline PiP (CSS fill vs
    auto-enter animation, sourceRectHint), PiP-close behavior, WebView audio focus, `og:*` staleness on
-   SPA navigation, `movie_player` data availability. Findings recorded in the plan.
+   SPA navigation, `movie_player` data availability. Findings: see "Stage 0 findings" below.
 1. **Rename**: label, ids, package; README/FEATURES updated; signed build verified.
 2. **Foundation**: `WebViewHost` (D2/D3), identity core (profile/fallback wipe, setProfile-first,
    seeding), message bridge + split document-start scripts, navigation policy, `PageIdentity`,
@@ -262,3 +270,108 @@ Takeout import (keep JSON + NewPipe). If the PiP spike fails, PiP moves to the n
   launch to playable video.
 - The user's phone runs Vanadium; a read-only feature probe there happens only with the user's
   go-ahead, after which the probe build is uninstalled.
+
+## Stage 0 findings
+
+Measured on the emulator (Android 16, API 36, Google APIs image, Android System WebView
+133.0.6943.137) over WebView remote debugging, from a Dutch network (YouTube reports `GL=NL`).
+
+### Dependencies
+
+- androidx.webkit `1.18.0`; media3 `media3-session` and `media3-common` `1.11.1`.
+- Compose BOM `2026.09.00` (ui `1.12.1`) with material3 pinned to `1.5.0-rc01`. The stable BOM maps
+  material3 to `1.4.0`, which ships `@ExperimentalMaterial3ExpressiveApi` but not `ButtonGroup`,
+  `FloatingToolbar` or `LoadingIndicator`; `1.5.0-rc01` has them.
+- **Contradicts the plan's "compileSdk 36".** Compose `1.12` and material3 `1.5.0-rc01` require
+  compileSdk 37 and AGP 9.1 or newer. The build now uses AGP `9.5.1` with built-in Kotlin (the
+  `org.jetbrains.kotlin.android` plugin and `kotlinOptions` are gone; JVM target follows
+  `compileOptions`), Gradle `9.9.0`, Kotlin `2.3.21` for the compose and serialization plugins,
+  compileSdk 37, targetSdk 36, and Robolectric `4.16.1` (needed for SDK 36). `buildConfig` is on for
+  the probe. activity, core, lifecycle, coil and kotlinx-serialization are unchanged.
+
+### Feature probe
+
+`WebViewProbe` logs under `YT-PROBE` in debug builds and turns on WebView remote debugging:
+
+```
+webview package=com.google.android.webview version=133.0.6943.137
+MULTI_PROFILE=true
+DELETE_BROWSING_DATA=true
+DOCUMENT_START_SCRIPT=true
+WEB_MESSAGE_LISTENER=true
+USER_AGENT_METADATA=true
+HTTP_CACHE_MANAGER=false
+STARTUP_FEATURE_SET_DATA_DIRECTORY_SUFFIX=true
+```
+
+The probe loads the WebView provider, so it runs in `MainActivity.onCreate`, not in
+`Application.onCreate`. Stage 2 must keep it after any `ProcessGlobalConfig` call. Nothing in the plan
+needs `HTTP_CACHE_MANAGER`, so its absence on WebView 133 changes nothing.
+
+### Answers
+
+- **a. Signed-out home.** A fresh WebView shows only "Try searching to get started" with an empty
+  feed. This confirms D2: Feeds (or Library) stays the start destination.
+- **b. Staleness after SPA navigation.** After video to video, `og:url`, `og:title`, `og:image` and
+  `ytInitialData` still describe the first video; `link[rel=canonical]` is current.
+  `#movie_player` is present. `getVideoData()` returns the current `video_id`, `title` and `author`
+  but no channel id. `getPlayerResponse().videoDetails` returns the current `videoId`, `title`,
+  `author` and `channelId`. On channel pages reached by SPA, `#movie_player` stays in the DOM with
+  the previous video's id and an empty title, and `getPlayerResponse()` is null. Channel to channel
+  behaves the same: og tags and `ytInitialData` are stale, canonical is current. The plan's rules
+  hold. Two additions for `PageIdentity`: take the channel id only from `getPlayerResponse()`, and on
+  `/@handle` pages canonical is the handle URL, not `/channel/UC...`, with no UC id anywhere in the
+  page after SPA navigation. So `ChannelResolver` is needed for every handle page, not only for
+  backfill.
+- **c. Navigation events.** On m.youtube.com SPA navigation fires `state-navigatestart`, then
+  `pushState`, then `state-navigateend`, all on `window`. Back fires `state-navigatestart`,
+  `replaceState`, `popstate`, `state-navigateend`. `yt-navigate-start`, `yt-navigate-finish`,
+  `yt-page-data-updated`, `yt-page-data-fetched` and `yt-player-updated` never fired. The plan's
+  "YouTube's navigation events" should name `state-navigateend` on `window`, next to the
+  `pushState`/`replaceState`/`popstate` hook.
+- **d. Audio focus.** Chromium's `AudioFocusDelegate` holds `AUDIOFOCUS_GAIN` with `USAGE_MEDIA`
+  while a video plays audibly; muted autoplay holds no focus. An incoming call (Telecom,
+  `GAIN_TRANSIENT`) paused the video, and it resumed by itself when the call ended. Chrome starting
+  audio while the app was in front paused the video for good. WebView handles focus itself, so the
+  media3 adapter must not request focus as well.
+- **e. PiP with inline video.** Auto-enter (`setAutoEnterEnabled(true)`, 16:9) on Home works, and
+  with the D2 `configChanges` list the Activity is not recreated. **Contradicts the plan in three
+  places.** First, YouTube's player pauses itself in PiP: it compares `outerWidth * outerHeight`
+  with the largest screen area it has seen, flags a large drop as picture-in-picture, and on the
+  next progress tick pauses any video whose `backgroundable` flag is false, which is always the
+  case signed out. Pinning `window.outerWidth` and `outerHeight` to their full-size values before
+  entering PiP kept the video playing and rendering in the PiP window. The early script needs that
+  pin. Second, the video-fill CSS cannot use `vh` (`100vh` is 0 in the PiP-sized WebView). It needs
+  `position:fixed; inset:0; width:100%; height:100%` on the video. It must also raise the player
+  container, since `#movie_player` has `z-index:0` and caps the video, and hide
+  `.ytmDrawerLayoutContainerDrawerLayout` (a 360 px fixed drawer that peeks into the 228 px
+  viewport) and the top bar. Third, D4's row "User closes the PiP window: Activity destroyed" is
+  wrong. Closing PiP calls `onStop` and then `onPictureInPictureModeChanged(false)`. The Activity
+  stays alive in an invisible background task, the process and foreground service stay up, and
+  audio kept playing. D4 needs an explicit rule: PiP mode ending while the Activity is stopped
+  means the user closed it, so pause through `PlaybackHub` and release the session. The PiP menu
+  shows only settings, expand and close; play/pause has to come from media session actions.
+- **f. Consent and bot pages.** No consent page and no bot check appeared in any fresh WebView
+  session, and no `SOCS` cookie was set. Three HTTP runs per case show why: YouTube exempts the
+  Android WebView user agent (the `Version/4.0` token) from consent. The same requests with a
+  Chrome mobile UA get a 302 to `consent.youtube.com` on channel pages and an in-page consent form
+  on home and watch pages. With a Chrome UA override in the WebView, the pending cookie before any
+  choice was `SOCS=CAAaBgiA1LnXBg`. "Reject all" set
+  `SOCS=CAESNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjYxMTA2LjA3X3AwGgJlbiACGgYIgNS51wY` and
+  "Accept all" set
+  `SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjYxMTA2LjA3X3AwGgJlbiACGgYIgNS51wY`,
+  both on `.youtube.com` with a 13-month expiry. Seeded on a Chrome UA, both full values and the
+  short `SOCS=CAI` skip consent; `SOCS=CAE=` does not. Plan changes: seed the reject value. Note in
+  stage 8 that normalizing the UA away from the WebView form brings consent back unless `SOCS` is
+  seeded. `ChannelResolver`'s plain HTTP GET must send `SOCS`, or channel pages answer with the
+  consent redirect.
+
+### Other observations
+
+- **Contradicts the plan's background audio.** In the current build, pressing Home pauses the video
+  even with the foreground service running and `document.hidden` spoofed. No page script calls
+  `pause()`; Chromium pauses the media when the WebView window goes invisible. Overriding
+  `WebView.onWindowVisibilityChanged` to always pass `View.VISIBLE` kept playback going after Home,
+  with the screen off, and after closing PiP. Stage 6 needs this override in `WebViewHost`.
+- Fresh loads sometimes autoplay muted ("Tap to unmute"). The first watch load played with sound.
+- Two mid-roll video ads played during the PiP test, and the current ad hiding did not stop them.

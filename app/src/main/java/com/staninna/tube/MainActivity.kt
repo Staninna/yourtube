@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        WebViewProbe.run(this)
 
         webView = WebView(this).apply {
             setBackgroundColor(Color.BLACK)
