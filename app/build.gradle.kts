@@ -37,6 +37,8 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true // Robolectric needs merged resources/manifest
+            // Plain JVM tests reach android.util.Log in error paths; let it be a no-op there.
+            isReturnDefaultValues = true
         }
     }
 }

@@ -1,6 +1,5 @@
 package com.staninna.yourtube.ui
 
-import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -40,34 +39,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.staninna.yourtube.MainViewModel
 import com.staninna.yourtube.Tab
+import com.staninna.yourtube.YouTube
+import com.staninna.yourtube.web.WebViewHost
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TubeRoot(vm: MainViewModel, webView: WebView) {
+fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
     val tab by vm.tab.collectAsStateWithLifecycle()
-    val page by vm.page.collectAsStateWithLifecycle()
+    val nav by host.nav.collectAsStateWithLifecycle()
+    val starTarget by vm.starTarget.collectAsStateWithLifecycle()
     val library by vm.library.collectAsStateWithLifecycle()
-    val settings by vm.settings.collectAsStateWithLifecycle()
 
-    val starred = library.items.any { it.id == page.id && page.id.isNotBlank() }
+    val target = starTarget
+    val starred = target != null && library.items.any { it.id == target.id }
 
-    // Feed the WebView navigation requests and setting changes.
-    LaunchedEffect(Unit) { vm.nav.collect { url -> webView.loadUrl(url) } }
-    LaunchedEffect(settings.hideShorts) {
-        webView.evaluateJavascript(
-            "window.__tubeApplySettings && window.__tubeApplySettings('{\"hideShorts\":${settings.hideShorts}}')",
-            null,
-        )
-    }
-
-    BackHandler(enabled = tab != Tab.WATCH || webView.canGoBack()) {
+    BackHandler(enabled = tab != Tab.WATCH || nav.canGoBack) {
         when {
             tab != Tab.WATCH -> vm.selectTab(Tab.WATCH)
-            webView.canGoBack() -> webView.goBack()
+            nav.canGoBack -> host.goBack()
         }
     }
 
@@ -75,24 +67,24 @@ fun TubeRoot(vm: MainViewModel, webView: WebView) {
         topBar = {
             when (tab) {
                 Tab.WATCH -> TopAppBar(
-                    title = { Text(page.title.ifBlank { "Tube" }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    title = {},
                     navigationIcon = {
-                        if (webView.canGoBack()) IconButton(onClick = { webView.goBack() }) {
+                        if (nav.canGoBack) IconButton(onClick = { host.goBack() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                         }
                     },
                     actions = {
-                        if (page.starrable) IconButton(onClick = { vm.toggleStarCurrent() }) {
+                        if (target != null) IconButton(onClick = { vm.toggleStarCurrent() }) {
                             if (starred) Icon(Icons.Filled.Star, "Unstar", tint = MaterialTheme.colorScheme.primary)
                             else Icon(Icons.Outlined.StarBorder, "Star")
                         }
-                        IconButton(onClick = { vm.open("https://m.youtube.com") }) { Icon(Icons.Filled.Home, "Home") }
+                        IconButton(onClick = { vm.open(YouTube.HOME) }) { Icon(Icons.Filled.Home, "Home") }
                     },
                 )
                 Tab.LIBRARY -> TopAppBar(title = { Text("Library") })
                 Tab.HISTORY -> TopAppBar(
                     title = { Text("History") },
-                    actions = { IconButton(onClick = { com.staninna.yourtube.data.Store.clearHistory() }) { Icon(Icons.Filled.DeleteSweep, "Clear") } },
+                    actions = { IconButton(onClick = { vm.clearHistory() }) { Icon(Icons.Filled.DeleteSweep, "Clear") } },
                 )
                 Tab.FEEDS -> TopAppBar(
                     title = { Text("Feeds") },
@@ -111,7 +103,7 @@ fun TubeRoot(vm: MainViewModel, webView: WebView) {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             // The WebView stays attached and playing while native tabs cover it.
-            AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize())
+            WebViewSlot(host, Modifier.fillMaxSize())
             if (tab != Tab.WATCH) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     when (tab) {
@@ -153,10 +145,10 @@ private fun LibraryScreen(vm: MainViewModel) {
         items(library.items, key = { it.id }) { item ->
             MediaRow(
                 title = item.title,
-                subtitle = item.author.ifBlank { item.type.name.lowercase() },
+                subtitle = item.author ?: item.type.name.lowercase(),
                 thumbnail = item.thumbnail,
                 onClick = { vm.open(item.url) },
-                onTrailing = { com.staninna.yourtube.data.Store.toggleStar(item) },
+                onTrailing = { vm.toggleStar(item) },
                 trailing = Icons.Filled.Star,
             )
         }
@@ -170,8 +162,8 @@ private fun HistoryScreen(vm: MainViewModel) {
     LazyColumn(Modifier.fillMaxSize()) {
         items(history, key = { it.videoId }) { h ->
             MediaRow(
-                title = h.title.ifBlank { h.url },
-                subtitle = h.author,
+                title = h.meta?.title ?: h.url,
+                subtitle = h.meta?.author,
                 thumbnail = h.thumbnail,
                 onClick = { vm.open(h.url) },
             )
@@ -198,15 +190,15 @@ private fun FeedsScreen(vm: MainViewModel) {
 @Composable
 private fun MediaRow(
     title: String,
-    subtitle: String,
-    thumbnail: String,
+    subtitle: String?,
+    thumbnail: String?,
     onClick: () -> Unit,
     onTrailing: (() -> Unit)? = null,
     trailing: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
     androidx.compose.material3.ListItem(
         headlineContent = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-        supportingContent = { if (subtitle.isNotBlank()) Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = { if (!subtitle.isNullOrBlank()) Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         leadingContent = {
             coil.compose.AsyncImage(
                 model = thumbnail,

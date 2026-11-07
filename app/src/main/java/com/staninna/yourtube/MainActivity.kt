@@ -1,118 +1,62 @@
 package com.staninna.yourtube
 
-import android.annotation.SuppressLint
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
-import android.view.View
-import android.view.ViewGroup
-import android.webkit.JavascriptInterface
-import android.webkit.WebChromeClient
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
-import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.staninna.yourtube.ui.TubeRoot
 import com.staninna.yourtube.ui.TubeTheme
+import com.staninna.yourtube.web.WebViewHost
+import com.staninna.yourtube.web.WebViewStartup
+import kotlinx.coroutines.launch
 
+/**
+ * The one screen. Each creation is a launch with a new identity (D2): a cold start opens Feeds or
+ * Library and loads nothing; after process death, or a process restart for a new identity, it
+ * reloads the last URL.
+ */
 class MainActivity : ComponentActivity() {
 
-    private val vm: MainViewModel by viewModels()
-    private lateinit var webView: WebView
+    private val app: TubeApp get() = application as TubeApp
+    private val vm: MainViewModel by viewModels {
+        viewModelFactory { initializer { MainViewModel(app.store, app.channels) } }
+    }
+    private lateinit var host: WebViewHost
 
-    private var customView: View? = null
-    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
-    private var fullscreenBack: OnBackPressedCallback? = null
-
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        WebViewProbe.run(this)
+        WebViewProbe.run(this) // loads WebView, so only after TubeApp's WebViewStartup
 
-        webView = WebView(this).apply {
-            setBackgroundColor(Color.BLACK)
-            with(settings) {
-                javaScriptEnabled = true
-                domStorageEnabled = true
-                databaseEnabled = true
-                mediaPlaybackRequiresUserGesture = false
-                loadWithOverviewMode = true
-                useWideViewPort = true
-                userAgentString = userAgentString.replace("; wv", "")
-            }
-            addJavascriptInterface(Bridge(), "TubeBridge")
-            webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView, url: String?) {
-                    view.evaluateJavascript(injectedScript, null)
-                    view.evaluateJavascript(
-                        "window.__tubeApplySettings && window.__tubeApplySettings('{\"hideShorts\":${vm.settings.value.hideShorts}}')",
-                        null,
-                    )
-                }
-            }
-            webChromeClient = FullscreenChromeClient()
-        }
+        host = WebViewHost(this, app.store.settings, vm, onRestartNeeded = ::restartForNewIdentity)
+        (savedInstanceState?.getString(KEY_URL) ?: consumeRestartUrl())?.let(vm::open)
+        lifecycleScope.launch { vm.openRequests.collect(host::load) }
 
         setContent {
             val settings by vm.settings.collectAsStateWithLifecycle()
             TubeTheme(dynamicColor = settings.dynamicColor) {
-                TubeRoot(vm = vm, webView = webView)
+                TubeRoot(vm = vm, host = host)
             }
-        }
-
-        if (savedInstanceState == null) webView.loadUrl(START_URL) else webView.restoreState(savedInstanceState)
-    }
-
-    private inner class Bridge {
-        @JavascriptInterface fun setPlaying(isPlaying: Boolean) = vm.setPlaying(isPlaying)
-        @JavascriptInterface fun pageInfo(json: String) = vm.onPageInfo(json)
-        @JavascriptInterface fun watch(json: String) = vm.onWatch(json)
-    }
-
-    private inner class FullscreenChromeClient : WebChromeClient() {
-        private val content: ViewGroup get() = findViewById(android.R.id.content)
-
-        override fun onShowCustomView(view: View, callback: CustomViewCallback) {
-            if (customView != null) { callback.onCustomViewHidden(); return }
-            customView = view.apply { setBackgroundColor(Color.BLACK) }
-            customViewCallback = callback
-            content.addView(
-                view,
-                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
-            )
-            fullscreenBack = object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() = onHideCustomView()
-            }.also { onBackPressedDispatcher.addCallback(this@MainActivity, it) }
-        }
-
-        override fun onHideCustomView() {
-            val view = customView ?: return
-            content.removeView(view)
-            customView = null
-            customViewCallback?.onCustomViewHidden()
-            customViewCallback = null
-            fullscreenBack?.remove()
-            fullscreenBack = null
         }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        webView.saveState(outState)
+        host.restorableUrl?.let { outState.putString(KEY_URL, it) }
     }
 
     override fun onPause() {
         super.onPause()
-        // Keep audio going when backgrounded: don't pause the WebView, and hold the process with a
-        // foreground service while something is actually playing.
+        // Keep audio going when backgrounded: hold the process with a foreground service while
+        // something is playing.
         if (vm.playing.value && !isChangingConfigurations) {
             ContextCompat.startForegroundService(this, Intent(this, PlaybackService::class.java))
         }
@@ -123,18 +67,35 @@ class MainActivity : ComponentActivity() {
         stopService(Intent(this, PlaybackService::class.java))
     }
 
+    override fun onStop() {
+        super.onStop()
+        app.store.flush()
+    }
+
     override fun onDestroy() {
         stopService(Intent(this, PlaybackService::class.java))
-        (webView.parent as? ViewGroup)?.removeView(webView)
-        webView.destroy()
+        app.store.flush()
         super.onDestroy()
     }
 
-    private val injectedScript: String by lazy {
-        assets.open("inject.js").bufferedReader().use { it.readText() }
+    /**
+     * The URL a process restart asked for. Read once: a later relaunch from recents replays the same
+     * intent and must start fresh instead.
+     */
+    private fun consumeRestartUrl(): String? {
+        val url = intent.getStringExtra(WebViewStartup.EXTRA_URL)
+        intent.removeExtra(WebViewStartup.EXTRA_URL)
+        return url.takeIf { intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0 }
     }
 
-    companion object {
-        private const val START_URL = "https://m.youtube.com"
+    private fun restartForNewIdentity(url: String?) {
+        lifecycleScope.launch {
+            app.store.flush().join()
+            WebViewStartup.restartProcess(this@MainActivity, url)
+        }
+    }
+
+    private companion object {
+        const val KEY_URL = "url"
     }
 }

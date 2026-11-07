@@ -27,7 +27,11 @@ move it up and flip its status. New ideas go in the backlog.
 |---------|--------|-------|
 | YouTube in a WebView (`m.youtube.com`) | done | native Compose activity hosting the WebView |
 | Fullscreen video | partial | WebChromeClient custom-view handling; rotation/immersive polish pending |
-| Resume where you left off | done | `inject.js` saves position per video id in localStorage, seeks back on load (rewind 5s, skips finished/too-short) |
+| Resume where you left off | done | each history entry keeps its playback position in the native store (last 2000 videos), so it survives identity changes. Rewinds 5 s; skips videos under 5 s in or within 15 s of the end; a `t=` URL parameter wins. Saved every 10 s while playing and on pause, end and leaving the app. |
+| Fresh identity every launch | done | each process starts with an empty WebView data directory; each new WebView (cold Activity start, renderer crash) gets a new WebView profile, and the old one is wiped once its WebView is destroyed. WebViews without profile support restart the app process instead. `SOCS` (reject all) and `PREF` (theme, language, region) are set before the first request, so no consent page. |
+| Launch behavior | done | a cold launch opens Feeds (Library without subs) and loads nothing; the Watch tab loads YouTube home when empty; after process death the last URL reloads. Config changes (rotation, theme, PiP size) never recreate the screen. |
+| Renderer crash recovery | done | the WebView is replaced under a new identity and the page reloads and resumes. |
+| Links leaving YouTube | done | YouTube, its consent page and the `google.com/sorry` captcha stay in the app; every other link opens in the browser or the matching app. |
 | Ad hiding | partial | CSS hides common ad elements only. No network/manifest-level ad blocking (which is what removes mid-roll ad breaks). See backlog. |
 | Background playback | partial | foreground service + Page-Visibility guard keep audio going when backgrounded. No lock-screen / notification transport controls yet (needs MediaSession). |
 | Back navigation | done | in-page back, then exit |
@@ -38,10 +42,10 @@ These are the priority after v0 compiles and runs. All local, no login.
 
 | Feature | Status | Plan |
 |---------|--------|------|
-| **Star channels and videos (library)** | todo | native Compose list + local store (Room or DataStore). A star action in the app chrome; resolve a channel's RSS id for feeds. |
-| **Watch history** | todo | record every watched video (id, title, thumbnail, position) locally from `inject.js` via the native bridge; native list to reopen (reuses resume). |
+| **Star channels and videos (library)** | partial | star in the Watch top bar. What gets starred comes from the URL plus the player's own data, so it stays right after in-page navigation. `/@handle` channels are resolved to their channel id and avatar in the background (cached 30 days). Tag sheet and Library redesign come in stage 4. |
+| **Watch history** | partial | every played video is recorded (last 2000) with title and channel; plain list to reopen. Day grouping, swipe to remove and progress bars come in stage 4. |
 | **RSS feed reader for channels** | todo | fetch `https://www.youtube.com/feeds/videos.xml?channel_id=...` (anonymous, no login), parse XML natively, show newest uploads from starred channels. This is the de-Googled replacement for a subscriptions feed. |
-| **Folders for the library** | todo | group starred items, like NouTube's folder picker. |
+| **Tags for the library** | partial | replaces folders. The store has tags (create, attach, delete with cascade); the UI comes in stage 4. |
 | **Hide shorts** | todo | CSS/inject toggle; quick win. |
 | App chrome (top bar, drawer) | todo | minimal Compose navigation to reach library / history / feeds without leaving the player. |
 | Settings + import/export | todo | local JSON export/import so data is portable. |

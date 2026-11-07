@@ -18,7 +18,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|density|fontScale|locale|layoutDirection|keyboard|keyboardHidden|navigation|uiMode"
             android:launchMode="singleTask"
             android:theme="@style/Theme.Tube">
             <intent-filter>
@@ -26,6 +26,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Process-restart trampoline for WebViews without multi-profile support. -->
+        <activity
+            android:name=".RestartActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:process=":restart"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- Keeps playback alive while the app is backgrounded or the screen is off. -->
         <service

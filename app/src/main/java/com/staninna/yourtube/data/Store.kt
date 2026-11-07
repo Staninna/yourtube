@@ -1,128 +1,172 @@
 package com.staninna.yourtube.data
 
-import android.content.Context
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import java.io.File
 import java.util.UUID
 
-/** Local persistence for the login-free library, history and settings. */
-object Store {
-    private val json = Json { ignoreUnknownKeys = true }
-    private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private lateinit var dir: File
-    private const val HISTORY_LIMIT = 500
+/**
+ * The app's first-party state: library, tags, history (which holds resume positions), settings and
+ * the channel cache. Identity changes never touch it. Every mutation is one atomic `update {}` on its
+ * file.
+ *
+ * Library, settings and channel changes are written right away. History changes with every playback
+ * event, so it is kept in memory and written every [PLAYBACK_FLUSH_MS] while playing, and on [flush]
+ * (pause, end, Activity stop and destroy).
+ *
+ * [scope] must run one coroutine at a time; it is the store's single writer.
+ */
+class Store(
+    dir: File,
+    private val scope: CoroutineScope,
+    private val now: () -> Long = System::currentTimeMillis,
+) {
+    private val libraryFile = StoreFile(dir, "library.json", Library.serializer(), Library(), scope)
+    private val historyFile =
+        StoreFile(dir, "history.json", ListSerializer(HistoryEntry.serializer()), emptyList(), scope)
+    private val settingsFile = StoreFile(dir, "settings.json", Settings.serializer(), Settings(), scope)
+    private val channelsFile = StoreFile(
+        dir, "channels.json", MapSerializer(String.serializer(), CachedChannel.serializer()), emptyMap(), scope,
+    )
+    private val files = listOf(libraryFile, historyFile, settingsFile, channelsFile)
 
-    private val _library = MutableStateFlow(LibraryState())
-    val library: StateFlow<LibraryState> = _library.asStateFlow()
+    val library: StateFlow<Library> = libraryFile.state
 
-    private val _history = MutableStateFlow<List<HistoryEntry>>(emptyList())
-    val history: StateFlow<List<HistoryEntry>> = _history.asStateFlow()
+    /** Watched videos, most recent first, each with its playback position. */
+    val history: StateFlow<List<HistoryEntry>> = historyFile.state
+    val settings: StateFlow<Settings> = settingsFile.state
 
-    private val _settings = MutableStateFlow(Settings())
-    val settings: StateFlow<Settings> = _settings.asStateFlow()
+    /** Resolved channels keyed by channel page path (see `PageIdentity.Channel.path`). */
+    val channels: StateFlow<Map<String, CachedChannel>> = channelsFile.state
 
-    fun init(context: Context) {
-        if (::dir.isInitialized) return
-        dir = context.filesDir
-        _library.value = read("library.json", LibraryState())
-        _history.value = read("history.json", emptyList())
-        _settings.value = read("settings.json", Settings())
-    }
+    /**
+     * Files that could not be read at startup; each was kept as `<name>.corrupt`. Stage 4 shows a
+     * one-time notice with an export action from this.
+     */
+    val corruptFiles: Set<String> = files.filter { it.loadResult == LoadResult.CORRUPT }.map { it.name }.toSet()
 
-    private inline fun <reified T> read(name: String, fallback: T): T =
-        runCatching { json.decodeFromString<T>(File(dir, name).readText()) }.getOrDefault(fallback)
-
-    private inline fun <reified T> write(name: String, value: T) {
-        io.launch { runCatching { File(dir, name).writeText(json.encodeToString(value)) } }
-    }
+    @Volatile private var pendingFlush: Job? = null
 
     // --- library ---
 
-    fun isStarred(id: String): Boolean = _library.value.items.any { it.id == id }
+    /** Stars [item] (newest first, stamped now) or, when an item with its id is starred, unstars it. */
+    fun toggleStar(item: StarredItem) = libraryFile.update { lib ->
+        val starred = lib.items.any { it.id == item.id }
+        lib.copy(
+            items = if (starred) lib.items.filterNot { it.id == item.id } else listOf(item.copy(addedAt = now())) + lib.items,
+        )
+    }
 
-    fun toggleStar(item: StarredItem) {
-        val items = _library.value.items
-        val next = if (items.any { it.id == item.id }) {
-            items.filterNot { it.id == item.id }
-        } else {
-            listOf(item) + items
+    /** Creates a tag with the next palette color. */
+    fun createTag(name: String): Tag {
+        val id = UUID.randomUUID().toString()
+        libraryFile.update { lib ->
+            lib.copy(tags = lib.tags + Tag(id, name.trim(), TAG_COLORS[lib.tags.size % TAG_COLORS.size]))
         }
-        _library.value = _library.value.copy(items = next)
-        write("library.json", _library.value)
+        return libraryFile.value.tags.first { it.id == id }
     }
 
-    fun setFolder(itemId: String, folderId: String?) {
-        _library.value = _library.value.copy(
-            items = _library.value.items.map { if (it.id == itemId) it.copy(folderId = folderId) else it },
+    fun setItemTags(itemId: String, tagIds: Set<String>) = libraryFile.update { lib ->
+        val known = lib.tags.map { it.id }.toSet()
+        lib.copy(items = lib.items.map { if (it.id == itemId) it.copy(tagIds = tagIds intersect known) else it })
+    }
+
+    /** Deletes a tag and detaches it from every item in the same write. Items stay starred. */
+    fun deleteTag(tagId: String) = libraryFile.update { lib ->
+        lib.copy(
+            tags = lib.tags.filterNot { it.id == tagId },
+            items = lib.items.map { if (tagId in it.tagIds) it.copy(tagIds = it.tagIds - tagId) else it },
         )
-        write("library.json", _library.value)
     }
 
-    fun addFolder(name: String): Folder {
-        val folder = Folder(id = UUID.randomUUID().toString(), name = name)
-        _library.value = _library.value.copy(folders = _library.value.folders + folder)
-        write("library.json", _library.value)
-        return folder
+    // --- playback: history with positions ---
+
+    /**
+     * Applies one playback event of the page's main video to history. [meta] is the player's
+     * confirmed metadata for that video, when known.
+     *
+     * - A video not at the top of history moves there (any event: after a pre-roll ad the video can
+     *   continue without a play event of its own). One already at the top is updated in place.
+     * - Time, pause and end events store the position. Play does not: it can fire before the page
+     *   has asked where to resume, and its position is still 0 then.
+     * - Metadata changes nothing, for the same reason.
+     * - Pause and end write at once; the rest is written by the debounce.
+     */
+    fun recordPlayback(kind: PlaybackKind, videoId: String, position: Double, duration: Double, meta: VideoMeta?) {
+        if (kind == PlaybackKind.METADATA) return
+        val storesPosition = kind != PlaybackKind.PLAY
+        historyFile.updateInMemory { history ->
+            val atTop = history.firstOrNull()?.takeIf { it.videoId == videoId }
+            val previous = atTop ?: history.firstOrNull { it.videoId == videoId }
+            var entry = (previous ?: HistoryEntry(videoId = videoId, watchedAt = now()))
+            if (meta != null) entry = entry.copy(meta = meta)
+            if (storesPosition) entry = entry.copy(position = position, duration = duration)
+            if (atTop != null) {
+                listOf(entry) + history.drop(1)
+            } else {
+                (listOf(entry.copy(watchedAt = now())) + history.filterNot { it.videoId == videoId }).take(HISTORY_CAP)
+            }
+        }
+        if (kind == PlaybackKind.PAUSE || kind == PlaybackKind.ENDED) flush() else persistPlaybackSoon()
     }
 
-    fun removeFolder(id: String) {
-        _library.value = _library.value.copy(
-            folders = _library.value.folders.filterNot { it.id == id },
-            items = _library.value.items.map { if (it.folderId == id) it.copy(folderId = null) else it },
-        )
-        write("library.json", _library.value)
+    /** Fills in metadata for a history entry that was recorded before the player confirmed it. */
+    fun annotateHistory(meta: VideoMeta) {
+        val entry = history.value.firstOrNull { it.videoId == meta.videoId } ?: return
+        if (entry.meta == meta) return
+        historyFile.updateInMemory { history -> history.map { if (it.videoId == meta.videoId) it.copy(meta = meta) else it } }
+        persistPlaybackSoon()
     }
 
-    // --- history ---
+    /** Where [videoId] should start, per [ResumeRules]. */
+    fun resumePosition(videoId: String): Double? = ResumeRules.startAt(history.value.firstOrNull { it.videoId == videoId })
 
-    fun recordWatch(entry: HistoryEntry) {
-        if (entry.videoId.isBlank()) return
-        val rest = _history.value.filterNot { it.videoId == entry.videoId }
-        val existing = _history.value.firstOrNull { it.videoId == entry.videoId }
-        val merged = entry.copy(
-            title = entry.title.ifBlank { existing?.title ?: "" },
-            author = entry.author.ifBlank { existing?.author ?: "" },
-            thumbnail = entry.thumbnail.ifBlank { existing?.thumbnail ?: "" },
-        )
-        _history.value = (listOf(merged) + rest).take(HISTORY_LIMIT)
-        write("history.json", _history.value)
+    /** Removes one video from history, and with it its resume position. */
+    fun removeHistory(videoId: String) = historyFile.update { history -> history.filterNot { it.videoId == videoId } }
+
+    /** Clears history and every resume position in one write. */
+    fun clearHistory() = historyFile.update { emptyList() }
+
+    /** Writes pending playback state now. The returned job completes when every write is done. */
+    fun flush(): Job {
+        pendingFlush?.cancel()
+        pendingFlush = null
+        val writes = files.mapNotNull { it.save() }
+        return scope.launch { writes.joinAll() }
     }
 
-    fun clearHistory() {
-        _history.value = emptyList()
-        write("history.json", _history.value)
-    }
-
-    fun removeHistory(videoId: String) {
-        _history.value = _history.value.filterNot { it.videoId == videoId }
-        write("history.json", _history.value)
+    private fun persistPlaybackSoon() {
+        if (pendingFlush?.isActive == true) return
+        pendingFlush = scope.launch {
+            delay(PLAYBACK_FLUSH_MS)
+            historyFile.save()
+        }
     }
 
     // --- settings ---
 
-    fun updateSettings(transform: (Settings) -> Settings) {
-        _settings.value = transform(_settings.value)
-        write("settings.json", _settings.value)
-    }
+    fun updateSettings(transform: (Settings) -> Settings) = settingsFile.update(transform)
 
-    /**
-     * Point the singleton at a clean [context] file dir and drop all in-memory state. Tests call
-     * this so each one starts from an empty store, which [init]'s one-shot guard would otherwise
-     * prevent.
-     */
-    @androidx.annotation.VisibleForTesting
-    internal fun resetForTest(context: Context) {
-        dir = context.filesDir
-        _library.value = LibraryState()
-        _history.value = emptyList()
-        _settings.value = Settings()
+    // --- channel cache ---
+
+    fun cachedChannel(path: String): CachedChannel? = channels.value[path]
+
+    fun cacheChannel(path: String, info: ChannelInfo) = channelsFile.update { it + (path to CachedChannel(info, now())) }
+
+    companion object {
+        const val HISTORY_CAP = 2000
+        const val PLAYBACK_FLUSH_MS = 10_000L
+
+        /** Material tonal reds, blues, greens and ambers; tags take them in turn. */
+        private val TAG_COLORS = listOf(
+            0xFFE57373, 0xFF64B5F6, 0xFF81C784, 0xFFFFB74D, 0xFFBA68C8, 0xFF4DB6AC, 0xFFF06292, 0xFFA1887F,
+        ).map { it.toInt() }
     }
 }
