@@ -1,0 +1,264 @@
+# YourTube v-next plan (god-tier), revision 3
+
+Status: revision 3, final before build. Folds in a self-review and two rounds of technical and
+product/UX review. Anonymization follows `docs/research/webview-anonymization.md`. Every stage is
+held to `docs/CODE_QUALITY.md`.
+
+## Context
+
+YourTube is a login-free, de-Googled YouTube client: a Kotlin + Jetpack Compose shell around a
+WebView of `m.youtube.com`. v0.1.0 shipped the shell, resume, ad/shorts hiding, a local
+library/history/feeds store, and a signed release pipeline. Goals came out of a grilling session
+with the user.
+
+## Goals (decided with the user)
+
+1. Rebuild the fragile core so star / library / feeds are reliable.
+2. Rename: label "YourTube", `applicationId` + `namespace` + package `com.staninna.yourtube`.
+3. Tags replace folders: one shared pool, many tags per item, created inline, managed in Settings.
+4. Library tab: segmented `Subs | Videos | Playlists`, tag-chip filter, channel avatars.
+5. Context star with an instant tag sheet.
+6. Feeds: all subs by default, tag chips, page size 25/50/100/250 (default 50), Load more.
+7. Background audio with lockscreen/notification controls.
+8. PiP: default auto-enter on any playback when leaving; Settings can restrict to fullscreen-only
+   or manual.
+9. Fresh WebView identity every launch, anonymized as far as reasonable.
+10. Material 3 Expressive across the native shell; Settings via a top-bar overflow menu.
+11. Optional reroll "mask" button next to Home: new identity on demand.
+
+## Core principle: first-party state is ours
+
+History, resume positions, library, tags and settings live in the native `Store` and never change
+when the identity changes. Identity changes only touch YouTube/Chromium session state. The aim is
+anonymization the user barely notices: fresh anonymous sessions, while history fills, videos resume,
+player preferences carry over, and the library is always there.
+
+## Non-goals
+
+No login, account, cloud sync, YouTube Music, native browse/home screens (issue #1), or IP-level
+anonymization (OS/VPN layer).
+
+## Decisions
+
+### D1. Fresh install
+
+`com.staninna.yourtube` is a new app: the `com.staninna.tube` install is not upgraded and its data
+is unreadable (user's informed choice; v0.1.0-1 has one install, one day old). Release notes say to
+uninstall the old app and re-add the repo in Obtainium. No folder migration code. Every store file
+carries `schemaVersion`; future transforms read raw JSON first. JSON export/import (stage 4) makes
+future moves painless.
+
+### D2. Lifetimes
+
+- **The WebView lives exactly as long as `MainActivity`; an identity lives as long as its WebView.**
+  `WebViewHost` is Activity-scoped. No process-level WebView, no context swapping.
+- All config changes are absorbed in the manifest (`screenSize|smallestScreenSize|screenLayout|
+  orientation|density|fontScale|locale|layoutDirection|keyboard|keyboardHidden|navigation|uiMode`),
+  so PiP, split-screen, rotation and theme changes never recreate the Activity.
+- A cold Activity creation is a launch: new identity, start destination is **Feeds** (Library when
+  there are no subs). Signed-out YouTube home is typically empty ("Try searching"), so Home is not
+  the start screen; this is confirmed in the stage 0 spike.
+- Activity recreated after process death (`savedInstanceState != null`): new identity, reload the
+  last URL; native resume restores the position. The user keeps their place.
+- Renderer crash (`onRenderProcessGone`, returns true): recreate the WebView (new identity), reload
+  the URL, resume.
+
+### D3. `WebViewHost` owns the WebView
+
+Activity-scoped owner of the WebView and everything bound to it: profile, document-start scripts,
+the message bridge, navigation policy, observable nav state (`canGoBack`, URL, progress, load
+error), and a `generation` counter. Compose renders
+`key(generation) { AndroidView(factory = { host.create(it) }, onRelease = { it.destroy() }) }`,
+so creation and destruction follow composition. A process-level `PlaybackHub` holds a nullable
+reference the Activity registers and clears; the media session reaches the WebView only through it.
+
+### D4. Leaving the app while playing (pure function, unit-tested)
+
+| Situation | Result |
+|---|---|
+| Playing, video visible, PiP allowed by setting, device supports PiP | Enter PiP. The media session drives PiP's play/pause. |
+| User closes the PiP window or swipes the task away | Playback stops, session released (Activity destroyed). |
+| Playing, PiP not allowed / not supported / Manual | Background audio with the media notification. |
+| Screen off while in the app | Background audio. |
+| Paused when leaving | Session kept in the notification for the grace period, then released. |
+| Switching to a native tab while playing | Keeps playing; now-playing bar shows on native tabs. |
+| Back at the WebView root while playing | `moveTaskToBack` instead of finish. |
+| Returning to the app | Exit PiP; same WebView and session continue. |
+
+The foreground service stays foreground through pauses and video transitions (autoplay) for a
+grace period (10 min), then stops. It is only ever started while the Activity is visible.
+
+## Architecture
+
+### Store
+
+- One serialized writer; every mutation via `MutableStateFlow.update {}`; `AtomicFile` writes;
+  missing vs corrupt read (corrupt file moved to `.corrupt`, defaults used, one-time snackbar with an
+  export action); `schemaVersion`.
+- Resume and history progress update in memory per report and persist debounced (10 s while
+  playing, plus pause, end, background, destroy). Resume map cap 2000, history cap 2000.
+- Resume rules carried over: rewind 5 s, skip if under 5 s in or within 15 s of the end, honor `t=`.
+- Clearing history also clears resume positions, with Undo.
+
+### Bridge and injection
+
+- `WebViewCompat.addWebMessageListener` (`WEB_MESSAGE_LISTENER`) restricted to YouTube origins,
+  accepting only main-frame messages; delivered on the main thread. Fallback: `addJavascriptInterface`
+  with the same message schema, posted to the main looper.
+- Messages are typed (`PageReport`, `PlaybackEvent`, `ResumeRequest`), decoded once at the edge.
+  Resume is async: on `loadedmetadata` the page posts a request, native replies via the reply proxy.
+- Document start (`DOCUMENT_START_SCRIPT`), split into: (a) a tiny DOM-safe early script (background
+  guard, CSS with current settings baked into the script string, pref re-seed); (b) the main script,
+  which waits for `DOMContentLoaded`. Scripts are re-registered (`ScriptHandler.remove()` + add) when
+  settings change. Fallback: inject on page start/finish (and skip the fingerprint script there).
+- No interval timers. Navigation comes from a `pushState`/`replaceState`/`popstate` hook plus
+  YouTube's navigation events; playback from media events (`play`, `pause`, `ended`, `timeupdate`,
+  `loadedmetadata`, `emptied`).
+- Navigation policy: YouTube origins, Google consent, and `www.google.com/sorry` (bot-check captcha)
+  load in-app; everything else opens externally.
+
+### Page identity
+
+- `PageIdentity` in Kotlin, unit-tested: derives type/id/channelId from the URL plus raw facts.
+- Video facts come from the player (`movie_player.getVideoData()` / `getPlayerResponse()`), accepted
+  only when their video id equals the URL's `v`. `og:*`/canonical are accepted only when they match
+  the current URL. `ytInitialData` is never used after the first load.
+- Channel id and avatar from a single native `ChannelResolver`: HTTP GET of the mobile channel page
+  (mobile UA + consent cookie), read the canonical `UC` id and `og:image`; bounded concurrency (2),
+  cached per channel, refreshed after 30 days. Used for `/@handle` resolution, star targets, and
+  avatar backfill. The star shows a loading state while resolving and times out to disabled.
+- Each report carries the URL it describes; reports for a URL that is no longer current are dropped.
+- Markup-drift logging when a page that should yield identity yields none (Settings > About >
+  Diagnostics shows counts).
+
+### Tags
+
+- `Tag(id, name, color)`; `StarredItem.tagIds: Set<String>`.
+- Ops: create inline (auto color), attach/detach, rename, recolor, delete (cascades in one write,
+  items stay starred). Destructive ops get Undo.
+- A starred channel is a sub; Feeds is every starred channel.
+- Library chips show tags present in the active segment; multi-select OR; selection kept per segment
+  in memory; if the active chip disappears the view falls back to all. Default sort: recently added;
+  search field appears past 30 items.
+
+### Star and tag sheet
+
+- Unstarred page: star immediately (zero tags fine), open the sheet: tag chips, inline "New tag",
+  and on video pages a separate "Channel" section with "Subscribe to <channel>".
+- Already starred: the sheet opens with current tags; explicit Unstar (with Undo).
+- Dismiss keeps the star and tags. Library rows open the same sheet on long-press.
+
+### Feeds
+
+- Client-side paging over the merged RSS set (RSS has ~15 per channel, no cursor).
+- First load renders progressively; afterwards the cached list shows instantly and fresh results
+  collect behind a "N new videos" pill that inserts on tap. Revealed count survives refreshes.
+- Fetch concurrency 6; per-channel failures shown with retry; adding a sub fetches just that channel;
+  pull-to-refresh; flags reset in `finally`. Hide-shorts filters `/shorts/` entries.
+- Page size from Settings; Load more until exhausted. States: first load, refreshing, empty,
+  filtered-empty, offline, partial failure.
+
+### Playback
+
+- media3: `SimpleBasePlayer` adapter whose state comes from `PlaybackEvent`s and whose commands go to
+  the WebView via `PlaybackHub`; `MediaSessionService` provides the notification, foreground
+  promotion, and system controls. Position/speed set on state changes and seeks only.
+- PiP: params kept current while playing (`setAutoEnterEnabled` per D4, aspect ratio clamped,
+  `sourceRectHint` from the video rect converted from CSS px). On entering PiP hide Compose chrome and
+  inject video-fill CSS; restore on exit. Play/pause in PiP comes from the media session.
+- No notification-permission prompt (media-session notifications are exempt on Android 13+).
+- `ACTION_AUDIO_BECOMING_NOISY` pauses; audio focus verified in the spike.
+- Fullscreen: immersive (system bars hidden), rotation follows the video's aspect and returns, back
+  exits fullscreen, no chrome flash.
+
+### Identity (fresh start and reroll)
+
+- **Profile path** (`MULTI_PROFILE`): at process start, delete every profile from
+  `getAllProfileNames()` except `Default`, without loading them. Each new WebView gets a fresh
+  profile name, bound with `WebViewCompat.setProfile` as its very first call. A reroll clears the old
+  profile (`deleteBrowsingData` on its web storage where supported, `removeAllCookies`) and creates a
+  new WebView on a new profile.
+- **Fallback path**: `ProcessGlobalConfig.setDataDirectorySuffix(random)` in `Application.onCreate`,
+  before anything touches WebView (asserted), then delete other `app_webview_*` dirs. A reroll uses
+  `deleteBrowsingData` on `WebStorage.getInstance()` when `DELETE_BROWSING_DATA` is supported;
+  otherwise it restarts the process and relaunches into the same URL so the identity is really fresh.
+- **Seeding** before the first load (waiting for the cookie callbacks): `SOCS` consent, `PREF` with
+  theme and hl/gl from the device locale, and an allowlist of non-identifying player preferences
+  (quality, speed, captions on/off and language, autoplay) snapshotted from the previous identity and
+  re-applied by the early script.
+- **Recovery**: consent pages get an injected "Reject all"; bot-check pages show a native banner
+  "YouTube wants a check. Try a fresh identity" with a reroll action (works even if the mask button is
+  hidden). Both counted in Diagnostics.
+- **Fingerprint script** (document start only, prototype-safe): normalized UA with matching Client
+  Hints via `setUserAgentMetadata` (`USER_AGENT_METADATA`), `navigator.webdriver` masked,
+  platform/UA consistent. Canvas/WebGL/audio noise only if it does not hurt playback.
+- **Reroll button** (shown by default): new identity, reload current URL, playback auto-resumes if it
+  was playing, back goes to the start destination. Snackbar: "New identity. Your library and history
+  are untouched."
+- Backup rules (`dataExtractionRules` + `fullBackupContent`) exclude WebView data, keep the store.
+
+### Shell and design (Material 3 Expressive)
+
+- Compose BOM / material3 bumped to a version with the Expressive APIs (pinned in stage 0; list of
+  components used).
+- Theme: dynamic color with fallback, light/dark, full edge-to-edge, predictive back. Watch top bar
+  uses YouTube's background color so there is no seam; theme change re-applies `PREF`.
+- YouTube's own chrome inside the shell is hidden by CSS (pivot bar, sign-in nags, app promos, its
+  header); a native search action loads `/results?search_query=`.
+- Watch top bar: back, star, mask, Home, overflow (Share, Settings); no title on Watch.
+- Thin load-progress indicator; main-frame load errors show a native error state with Retry.
+- Now-playing bar above the navigation bar on native tabs.
+- Shared `MediaRow` with progress bar and watched dimming, used by Feeds, Library, History.
+- History: grouped by day, swipe to remove, confirmed clear-all with Undo, progress bars.
+- Deep links (`youtube.com/watch`, `youtu.be`, `/@handle`, `/channel`) and an `ACTION_SEND` share
+  target open in the app.
+- Accessibility: state descriptions, content descriptions, 48 dp targets, TalkBack pass.
+- Settings: Playback (PiP mode, background audio), Feed (page size, hide shorts), Appearance (dynamic
+  color), Library (Manage tags, import/export), Privacy (show reroll button), About (Diagnostics).
+
+### Import / export (onboarding)
+
+JSON export/import of the whole store; subscription import from a NewPipe export and a Google Takeout
+`subscriptions.csv`. Empty Feeds offers "Import subscriptions".
+
+## Stages
+
+Each stage builds, passes unit tests, is verified on the emulator, passes a review against
+`docs/CODE_QUALITY.md` by a reviewer who did not write it, updates `docs/FEATURES.md`, and lands as
+its own commit.
+
+0. **Spike**: bump dependencies (androidx.webkit, media3, Compose BOM with Expressive); a debug
+   feature-probe screen; confirm on the emulator: signed-out home content, inline PiP (CSS fill vs
+   auto-enter animation, sourceRectHint), PiP-close behavior, WebView audio focus, `og:*` staleness on
+   SPA navigation, `movie_player` data availability. Findings recorded in the plan.
+1. **Rename**: label, ids, package; README/FEATURES updated; signed build verified.
+2. **Foundation**: `WebViewHost` (D2/D3), identity core (profile/fallback wipe, setProfile-first,
+   seeding), message bridge + split document-start scripts, navigation policy, `PageIdentity`,
+   `ChannelResolver`, Store rewrite, native resume + history, render-process recovery, config
+   changes.
+3. **Design system + shell**: theme, components, state components, a11y baseline, YouTube chrome
+   hiding, search action, progress/error states, now-playing bar slot, Settings skeleton, Watch top bar.
+4. **Library + tags + star + history + import/export**.
+5. **Feeds**. → **Release 1** (`v0.2.0`).
+6. **Background audio** (media3) + fullscreen polish + D4 non-PiP rows.
+7. **PiP** + D4 PiP rows.
+8. **Anonymization extras**: fingerprint script, UA metadata, consent/bot-check recovery, pref
+   carry-over, reroll button, backup rules.
+9. **QA pass** → **Release 2** (`v0.3.0`).
+
+**Cut order** if something slips: canvas/WebGL/audio noise; avatar backfill (keep placeholders);
+PiP fullscreen-only/manual modes; tag recolor; the 250 page size; Diagnostics UI (keep logging);
+Takeout import (keep JSON + NewPipe). If the PiP spike fails, PiP moves to the next release whole.
+
+## Testing and QA
+
+- JVM: Store (writer, atomicity, corrupt file, debounce, caps, tags + cascade + undo), `PageIdentity`
+  and stale-report dropping, D4 function, feed merge/paging/new-pill, chip semantics, import parsers.
+- Instrumented on the emulator: tab shell, segment and chips, tag sheet, star states, Settings, and a
+  `newIdentity()` test that sets a cookie + localStorage, rerolls, and asserts both are gone.
+- Manual on the emulator with screen recordings: page identity on real navigation, resume across
+  reroll, PiP, background audio, fullscreen, theme sync, consent/bot handling.
+- Acceptance checklist per flow with expected results; budgets measured: cold start to first frame,
+  launch to playable video.
+- The user's phone runs Vanadium; a read-only feature probe there happens only with the user's
+  go-ahead, after which the probe build is uninstalled.
