@@ -1,4 +1,4 @@
-package com.staninna.tube
+package com.staninna.yourtube
 
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -19,8 +19,8 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.staninna.tube.ui.TubeRoot
-import com.staninna.tube.ui.TubeTheme
+import com.staninna.yourtube.ui.TubeRoot
+import com.staninna.yourtube.ui.TubeTheme
 
 class MainActivity : ComponentActivity() {
 

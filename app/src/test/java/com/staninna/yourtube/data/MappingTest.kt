@@ -1,4 +1,4 @@
-package com.staninna.tube.data
+package com.staninna.yourtube.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

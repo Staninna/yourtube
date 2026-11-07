@@ -1,4 +1,4 @@
-package com.staninna.tube
+package com.staninna.yourtube
 
 import android.app.Application
 import android.webkit.WebView
@@ -9,12 +9,12 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
-import com.staninna.tube.data.HistoryEntry
-import com.staninna.tube.data.ItemType
-import com.staninna.tube.data.StarredItem
-import com.staninna.tube.data.Store
-import com.staninna.tube.ui.TubeRoot
-import com.staninna.tube.ui.TubeTheme
+import com.staninna.yourtube.data.HistoryEntry
+import com.staninna.yourtube.data.ItemType
+import com.staninna.yourtube.data.StarredItem
+import com.staninna.yourtube.data.Store
+import com.staninna.yourtube.ui.TubeRoot
+import com.staninna.yourtube.ui.TubeTheme
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test

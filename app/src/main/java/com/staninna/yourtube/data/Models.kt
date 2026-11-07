@@ -1,4 +1,4 @@
-package com.staninna.tube.data
+package com.staninna.yourtube.data
 
 import kotlinx.serialization.Serializable
 

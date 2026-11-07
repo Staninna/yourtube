@@ -1,4 +1,4 @@
-package com.staninna.tube.ui
+package com.staninna.yourtube.ui
 
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
@@ -42,8 +42,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.staninna.tube.MainViewModel
-import com.staninna.tube.Tab
+import com.staninna.yourtube.MainViewModel
+import com.staninna.yourtube.Tab
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,7 +92,7 @@ fun TubeRoot(vm: MainViewModel, webView: WebView) {
                 Tab.LIBRARY -> TopAppBar(title = { Text("Library") })
                 Tab.HISTORY -> TopAppBar(
                     title = { Text("History") },
-                    actions = { IconButton(onClick = { com.staninna.tube.data.Store.clearHistory() }) { Icon(Icons.Filled.DeleteSweep, "Clear") } },
+                    actions = { IconButton(onClick = { com.staninna.yourtube.data.Store.clearHistory() }) { Icon(Icons.Filled.DeleteSweep, "Clear") } },
                 )
                 Tab.FEEDS -> TopAppBar(
                     title = { Text("Feeds") },
@@ -156,7 +156,7 @@ private fun LibraryScreen(vm: MainViewModel) {
                 subtitle = item.author.ifBlank { item.type.name.lowercase() },
                 thumbnail = item.thumbnail,
                 onClick = { vm.open(item.url) },
-                onTrailing = { com.staninna.tube.data.Store.toggleStar(item) },
+                onTrailing = { com.staninna.yourtube.data.Store.toggleStar(item) },
                 trailing = Icons.Filled.Star,
             )
         }

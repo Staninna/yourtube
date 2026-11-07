@@ -1,4 +1,4 @@
-package com.staninna.tube.ui
+package com.staninna.yourtube.ui
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme

@@ -1,4 +1,4 @@
-package com.staninna.tube
+package com.staninna.yourtube
 
 import android.app.Application
 import android.app.NotificationChannel
@@ -9,7 +9,7 @@ import android.os.Build
 class TubeApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        com.staninna.tube.data.Store.init(this)
+        com.staninna.yourtube.data.Store.init(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 PLAYBACK_CHANNEL_ID,

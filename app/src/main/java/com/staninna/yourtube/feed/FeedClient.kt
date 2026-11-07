@@ -1,7 +1,7 @@
-package com.staninna.tube.feed
+package com.staninna.yourtube.feed
 
 import android.util.Xml
-import com.staninna.tube.data.FeedVideo
+import com.staninna.yourtube.data.FeedVideo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll

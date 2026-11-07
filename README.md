@@ -1,4 +1,4 @@
-# Tube
+# YourTube
 
 A lean, de-Googled YouTube client for Android: a native **Kotlin + Jetpack Compose** shell around a
 WebView of `m.youtube.com`, with login-free local features. It is a from-scratch, minimal
@@ -33,5 +33,5 @@ Output: `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Package
 
-`com.staninna.tube`, a separate app from the NouTube fork, so it installs side by side. Rename it
+`com.staninna.yourtube`, a separate app from the NouTube fork, so it installs side by side. Rename it
 in `app/build.gradle.kts` (and the `namespace`) if you want a different id.

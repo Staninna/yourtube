@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.staninna.tube"
+    namespace = "com.staninna.yourtube"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.staninna.tube"
+        applicationId = "com.staninna.yourtube"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

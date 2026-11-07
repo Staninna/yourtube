@@ -1,4 +1,4 @@
-package com.staninna.tube
+package com.staninna.yourtube
 
 import android.app.Notification
 import android.app.PendingIntent

@@ -1,6 +1,6 @@
 # Features and backlog
 
-The source of truth for what Tube does and does not do yet. Keep it current: when a feature lands,
+The source of truth for what YourTube does and does not do yet. Keep it current: when a feature lands,
 move it up and flip its status. New ideas go in the backlog.
 
 **Status legend**

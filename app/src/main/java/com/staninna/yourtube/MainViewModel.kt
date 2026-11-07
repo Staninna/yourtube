@@ -1,14 +1,14 @@
-package com.staninna.tube
+package com.staninna.yourtube
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.staninna.tube.data.FeedVideo
-import com.staninna.tube.data.ItemType
-import com.staninna.tube.data.PageInfo
-import com.staninna.tube.data.Store
-import com.staninna.tube.data.WatchReport
-import com.staninna.tube.feed.FeedClient
+import com.staninna.yourtube.data.FeedVideo
+import com.staninna.yourtube.data.ItemType
+import com.staninna.yourtube.data.PageInfo
+import com.staninna.yourtube.data.Store
+import com.staninna.yourtube.data.WatchReport
+import com.staninna.yourtube.feed.FeedClient
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow

@@ -1,4 +1,4 @@
-package com.staninna.tube.data
+package com.staninna.yourtube.data
 
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
