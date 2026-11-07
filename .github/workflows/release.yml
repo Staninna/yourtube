@@ -4,9 +4,9 @@
 # secrets, and publishes them (plus SHA256SUMS) as a GitHub Release.
 #
 # Triggers:
-#   - every push to my-main: tagged automatically as v<versionName>-fork.<n>
+#   - every push to my-main: tagged automatically as v<versionName>-<n>
 #     (add [skip ci] to the commit message to push without releasing)
-#   - pushing a tag that starts with "v" (e.g. v1.2.3-fork.7): releases that tag
+#   - pushing a tag that starts with "v" (e.g. v1.2.3-7): releases that tag
 #   - "Run workflow" in the Actions tab (needs this file on the default branch)
 #
 # Secrets (set by the droid signing-key.sh script):
@@ -21,7 +21,7 @@ name: Release
 
 on:
   push:
-    # Every push to my-main publishes a new release (v<versionName>-fork.<n>).
+    # Every push to my-main publishes a new release (v<versionName>-<n>).
     # Add [skip ci] to a commit message to push without releasing.
     branches:
       - my-main
@@ -38,7 +38,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to create (empty: next v<versionName>-fork.<n>)"
+        description: "Release tag to create (empty: next v<versionName>-<n>)"
         required: false
         default: ""
       prerelease:
@@ -121,17 +121,17 @@ jobs:
             [ -n "$version" ] || version="$(date -u +%Y.%m.%d)"
             VERSION="$version"
             # Automatic release (push to my-main or manual run without a tag).
-            # Reuse a fork release tag already on this commit, otherwise take the next free number.
-            # Only -fork.<n> tags count: forks also carry upstream's own tags (e.g. v1.2.0), and
-            # the fork's build must never be published under one of those.
+            # Reuse a build tag already on this commit, otherwise take the next free number.
+            # Tags are v<versionName>-<n>, so several pushes at the same versionName each get a
+            # unique release.
             git fetch --tags --force --quiet origin || true
-            tag="$(git tag --points-at HEAD --list 'v*-fork.*' | head -n1)"
+            tag="$(git tag --points-at HEAD --list "v${VERSION}-*" | grep -E "^v${VERSION}-[0-9]+$" | head -n1)"
             if [ -z "$tag" ]; then
               n=1
-              while git rev-parse -q --verify "refs/tags/v${VERSION}-fork.${n}" >/dev/null; do
+              while git rev-parse -q --verify "refs/tags/v${VERSION}-${n}" >/dev/null; do
                 n=$((n + 1))
               done
-              tag="v${VERSION}-fork.${n}"
+              tag="v${VERSION}-${n}"
             fi
           fi
           echo "Release tag: $tag"
