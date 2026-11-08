@@ -1,6 +1,8 @@
 package com.staninna.yourtube.web
 
 import com.staninna.yourtube.data.PlaybackKind
+import com.staninna.yourtube.data.SegmentAction
+import com.staninna.yourtube.data.SegmentCategory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -74,5 +76,25 @@ class BridgeMessageTest {
     @Test fun encodesResumeReplies() {
         assertEquals("""{"type":"resume","videoId":"v","position":55.0}""", BridgeMessage.encode(ResumeReply("v", 55.0)))
         assertEquals("""{"type":"resume","videoId":"v","position":null}""", BridgeMessage.encode(ResumeReply("v", null)))
+    }
+
+    // --- content filtering ---
+
+    @Test fun decodesSegmentRequestsSkipsAndAdLeaks() {
+        assertEquals(SegmentsRequest("dQw4w9WgXcQ"), BridgeMessage.decode("""{"type":"segments","videoId":"dQw4w9WgXcQ"}"""))
+        assertEquals(
+            SegmentSkipped("v", SegmentCategory.SELF_PROMO, 1.5, 9.0),
+            BridgeMessage.decode("""{"type":"skipped","videoId":"v","category":"selfpromo","start":1.5,"end":9}"""),
+        )
+        assertEquals(AdLeak("https://m.youtube.com/watch?v=x"), BridgeMessage.decode("""{"type":"adLeak","url":"https://m.youtube.com/watch?v=x"}"""))
+        assertNull(BridgeMessage.decode("""{"type":"skipped","videoId":"v","category":"poi_highlight","start":1,"end":2}"""))
+    }
+
+    @Test fun encodesSegmentRepliesAndUndo() {
+        assertEquals(
+            """{"type":"segments","videoId":"v","segments":[{"start":10.0,"end":20.0,"category":"sponsor","action":"skip"}]}""",
+            BridgeMessage.encode(SegmentsReply("v", listOf(PageSegment(10.0, 20.0, SegmentCategory.SPONSOR, SegmentAction.SKIP)))),
+        )
+        assertEquals("""{"type":"undoSkip","videoId":"v","start":10.0}""", BridgeMessage.encode(UndoSkip("v", 10.0)))
     }
 }

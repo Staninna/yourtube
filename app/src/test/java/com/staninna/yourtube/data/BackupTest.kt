@@ -34,7 +34,7 @@ class BackupTest {
             tags = listOf(Tag("t1", "Music", TagPalette.colors[0].argb), Tag("t2", "Talks", TagPalette.colors[1].argb)),
         ),
         history = listOf(entry("aaaaaaaaaaa", 20), entry("bbbbbbbbbbb", 10)),
-        settings = Settings(hideShorts = true, dynamicColor = false),
+        settings = Settings(removeShorts = true, dynamicColor = false),
     )
 
     private fun valid(text: String): BackupRead.Valid = BackupCodec.decode(text, NOW) as BackupRead.Valid

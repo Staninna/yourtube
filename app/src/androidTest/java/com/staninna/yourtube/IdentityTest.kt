@@ -15,6 +15,8 @@ import com.staninna.yourtube.ui.WebViewSlot
 import com.staninna.yourtube.web.PageListener
 import com.staninna.yourtube.web.PageReport
 import com.staninna.yourtube.web.PlaybackEvent
+import com.staninna.yourtube.web.SegmentSkipped
+import com.staninna.yourtube.web.SegmentsReply
 import com.staninna.yourtube.web.TubeWebView
 import com.staninna.yourtube.web.WebViewHost
 import kotlinx.coroutines.CoroutineScope
@@ -50,6 +52,9 @@ class IdentityTest {
         override fun onPageReport(report: PageReport) = Unit
         override fun onPlayback(event: PlaybackEvent) = Unit
         override fun resumePosition(videoId: String): Double? = null
+        override fun requestSegments(videoId: String, reply: (SegmentsReply) -> Unit) = Unit
+        override fun onSegmentSkipped(skip: SegmentSkipped) = Unit
+        override fun onAdLeak(url: String) = Unit
     }
 
     @Test fun replacedIdentityIsWipedAfterItsWebViewIsDestroyed() = runBlocking {

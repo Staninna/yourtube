@@ -19,7 +19,8 @@ object RssFeed {
      * [channelId]'s entries in feed order (newest first), or null when [xml] is not a whole, well-formed
      * feed, such as the HTML error page the feed server sends with its 404s or a body cut short. An
      * entry without a valid video id or publish time, or from another channel, is skipped. A missing
-     * title or channel name stays blank; Feeds shows the subscription's title there.
+     * title or channel name stays blank; Feeds shows the subscription's title there. An entry whose
+     * link is `/shorts/` is marked as a Short.
      */
     fun parse(xml: String, channelId: String): List<FeedVideo>? = try {
         read(xml, channelId)
@@ -51,6 +52,7 @@ object RssFeed {
                     name == "title" -> entry.title = parser.nextText().trim()
                     name == "name" && inAuthor -> entry.author = parser.nextText().trim()
                     name == "published" -> entry.published = parseInstant(parser.nextText().trim())
+                    name == "link" -> entry.link = parser.getAttributeValue(null, "href").orEmpty()
                 }
                 XmlPullParser.END_TAG -> when (name) {
                     "feed" -> closed = true
@@ -82,10 +84,13 @@ object RssFeed {
         var author = ""
         var published: Long? = null
 
+        /** The entry's `<link href>`: `/watch?v=` for a video, `/shorts/` for a Short. */
+        var link = ""
+
         fun toVideo(): FeedVideo? {
             val at = published ?: return null
             if (!YouTube.VIDEO_ID.matches(videoId) || !YouTube.CHANNEL_ID.matches(channelId)) return null
-            return FeedVideo(videoId, title, author, channelId, at)
+            return FeedVideo(videoId, title, author, channelId, at, isShort = link.contains("/shorts/"))
         }
     }
 }

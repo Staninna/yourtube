@@ -2,8 +2,12 @@ package com.staninna.yourtube
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.staninna.yourtube.data.AdLayer
 import com.staninna.yourtube.data.Library
 import com.staninna.yourtube.data.PlaybackKind
+import com.staninna.yourtube.data.SegmentAction
+import com.staninna.yourtube.data.SegmentCategory
+import com.staninna.yourtube.data.ServerInput
 import com.staninna.yourtube.data.StarredItem
 import com.staninna.yourtube.data.Store
 import com.staninna.yourtube.data.WatchProgress
@@ -13,9 +17,13 @@ import com.staninna.yourtube.page.ChannelResolver
 import com.staninna.yourtube.page.NowPlaying
 import com.staninna.yourtube.page.PageIdentity
 import com.staninna.yourtube.page.starItem
+import com.staninna.yourtube.sponsor.SegmentSource
+import com.staninna.yourtube.web.BridgeReply
 import com.staninna.yourtube.web.PageListener
 import com.staninna.yourtube.web.PageReport
 import com.staninna.yourtube.web.PlaybackEvent
+import com.staninna.yourtube.web.SegmentSkipped
+import com.staninna.yourtube.web.SegmentsReply
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +45,7 @@ class MainViewModel(
     private val store: Store,
     private val channels: ChannelResolver,
     feedFetcher: FeedFetcher,
+    segments: SegmentSource,
 ) : ViewModel(), PageListener {
 
     val history = store.history
@@ -83,6 +92,12 @@ class MainViewModel(
 
     /** Feeds: subscribed channels' uploads, chips and paging. */
     val feeds = FeedsModel(store, feedFetcher, viewModelScope)
+
+    /** SponsorBlock segments for the page, and skips with Undo. */
+    private val sponsor = SponsorModel(store, segments, viewModelScope, emit = { _events.trySend(it) })
+
+    /** Messages for the page that it did not ask for; the WebView host delivers them. */
+    val pagePushes: Flow<BridgeReply> = sponsor.pagePushes
 
     private val backups = BackupTransfer(store)
 
@@ -149,6 +164,12 @@ class MainViewModel(
 
     override fun resumePosition(videoId: String): Double? = store.resumePosition(videoId)
 
+    override fun requestSegments(videoId: String, reply: (SegmentsReply) -> Unit) = sponsor.request(videoId, reply)
+
+    override fun onSegmentSkipped(skip: SegmentSkipped) = sponsor.onSkipped(skip)
+
+    override fun onAdLeak(url: String) = Diagnostics.count("ad.leak", url)
+
     // --- history ---
 
     /** Clears history and resume positions, offering Undo. */
@@ -170,6 +191,7 @@ class MainViewModel(
         is UiEvent.HistoryCleared -> store.restoreHistory(event.entries)
         is UiEvent.HistoryRemoved -> store.restoreHistory(listOf(event.entry))
         is UiEvent.Unstarred -> library.undoUnstar(event)
+        is UiEvent.SegmentSkipped -> sponsor.undo(event)
     }
 
     fun dismissCorruptNotice() = store.dismissCorruptNotice()
@@ -190,8 +212,15 @@ class MainViewModel(
 
     // --- settings ---
 
-    fun setHideShorts(enabled: Boolean) = store.updateSettings { it.copy(hideShorts = enabled) }
+    fun setRemoveShorts(enabled: Boolean) = store.updateSettings { it.copy(removeShorts = enabled) }
     fun setDynamicColor(enabled: Boolean) = store.updateSettings { it.copy(dynamicColor = enabled) }
+    fun setAdLayer(layer: AdLayer, on: Boolean) = store.updateSettings { it.copy(adBlocking = it.adBlocking.with(layer, on)) }
+    fun setSponsorBlock(enabled: Boolean) = store.updateSettings { it.copy(sponsorBlock = it.sponsorBlock.copy(enabled = enabled)) }
+    fun setSegmentAction(category: SegmentCategory, action: SegmentAction) =
+        store.updateSettings { it.copy(sponsorBlock = it.sponsorBlock.with(category, action)) }
+
+    fun setSponsorServer(server: ServerInput.Valid) =
+        store.updateSettings { it.copy(sponsorBlock = it.sponsorBlock.copy(server = server.url)) }
 
     companion object {
         /** A cold launch opens Feeds, or Library when there is nothing to feed from. */

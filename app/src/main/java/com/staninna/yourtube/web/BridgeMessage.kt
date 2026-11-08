@@ -2,6 +2,8 @@ package com.staninna.yourtube.web
 
 import android.util.Log
 import com.staninna.yourtube.data.PlaybackKind
+import com.staninna.yourtube.data.SegmentAction
+import com.staninna.yourtube.data.SegmentCategory
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -87,6 +89,21 @@ data class PlaybackEvent(
 @SerialName("resume")
 data class ResumeRequest(val videoId: String) : BridgeMessage
 
+/** The page asks for [videoId]'s SponsorBlock segments when the video loads. Answered with a [SegmentsReply]. */
+@Serializable
+@SerialName("segments")
+data class SegmentsRequest(val videoId: String) : BridgeMessage
+
+/** The page skipped [videoId]'s segment of [category] from [start] to [end], in seconds. */
+@Serializable
+@SerialName("skipped")
+data class SegmentSkipped(val videoId: String, val category: SegmentCategory, val start: Double, val end: Double) : BridgeMessage
+
+/** An ad played on [url] despite the other ad layers. */
+@Serializable
+@SerialName("adLeak")
+data class AdLeak(val url: String) : BridgeMessage
+
 /** Messages the app sends back to the page, with the same `type` discriminator. */
 @Serializable
 sealed interface BridgeReply
@@ -95,3 +112,21 @@ sealed interface BridgeReply
 @Serializable
 @SerialName("resume")
 data class ResumeReply(val videoId: String, val position: Double?) : BridgeReply
+
+/**
+ * [videoId]'s segments with what to do at each, in order of start. Answers a [SegmentsRequest], and is
+ * pushed again when SponsorBlock settings change. Empty when there are none, SponsorBlock is off, or
+ * they could not be fetched: the video then plays as it is.
+ */
+@Serializable
+@SerialName("segments")
+data class SegmentsReply(val videoId: String, val segments: List<PageSegment>) : BridgeReply
+
+/** One segment as the page acts on it; never [SegmentAction.OFF]. */
+@Serializable
+data class PageSegment(val start: Double, val end: Double, val category: SegmentCategory, val action: SegmentAction)
+
+/** The viewer undid the skip of [videoId]'s segment starting at [start]: seek back, and skip it no more. */
+@Serializable
+@SerialName("undoSkip")
+data class UndoSkip(val videoId: String, val start: Double) : BridgeReply

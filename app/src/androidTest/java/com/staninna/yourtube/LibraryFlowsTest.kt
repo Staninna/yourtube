@@ -31,6 +31,7 @@ import com.staninna.yourtube.feed.FeedSource
 import com.staninna.yourtube.data.TagPalette
 import com.staninna.yourtube.data.VideoMeta
 import com.staninna.yourtube.page.ChannelResolver
+import com.staninna.yourtube.sponsor.SegmentSource
 import com.staninna.yourtube.ui.TubeRoot
 import com.staninna.yourtube.ui.theme.TubeTheme
 import com.staninna.yourtube.web.PageReport
@@ -65,6 +66,7 @@ class LibraryFlowsTest {
             store,
             ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)),
             FeedFetcher { ChannelFetch.Ok(emptyList(), FeedSource.RSS) },
+            SegmentSource { _, _ -> emptyList() },
         )
         lateinit var host: WebViewHost
         compose.runOnUiThread { host = WebViewHost(compose.activity, store.settings, vm, onRestartNeeded = {}) }

@@ -42,11 +42,11 @@ class FeedsModel(
     private val gate = Semaphore(FeedRules.CONCURRENCY)
 
     val view: StateFlow<FeedView> = combine(store.library, results, controls, store.settings) { lib, res, ctl, settings ->
-        FeedRules.view(lib, res, ctl, settings.feedPageSize)
+        FeedRules.view(lib, res, ctl, settings.feedPageSize, settings.removeShorts)
     }.stateIn(
         scope,
         SharingStarted.Eagerly,
-        FeedRules.view(store.library.value, results.value, controls.value, store.settings.value.feedPageSize),
+        store.settings.value.let { FeedRules.view(store.library.value, results.value, controls.value, it.feedPageSize, it.removeShorts) },
     )
 
     init {

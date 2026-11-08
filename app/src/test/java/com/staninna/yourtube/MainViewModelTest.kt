@@ -10,6 +10,7 @@ import com.staninna.yourtube.feed.ChannelFetch
 import com.staninna.yourtube.feed.FeedFetcher
 import com.staninna.yourtube.feed.FeedSource
 import com.staninna.yourtube.page.ChannelResolver
+import com.staninna.yourtube.sponsor.SegmentSource
 import com.staninna.yourtube.web.PageReport
 import com.staninna.yourtube.web.PlaybackEvent
 import com.staninna.yourtube.web.PlayerFacts
@@ -47,10 +48,11 @@ class MainViewModelTest {
     private lateinit var store: Store
 
     private val noFeeds = FeedFetcher { ChannelFetch.Ok(emptyList(), FeedSource.RSS) }
+    private val noSegments = SegmentSource { _, _ -> emptyList() }
 
     private fun TestScope.viewModel(): Pair<MainViewModel, Channel<String>> {
         store = Store(tmp.root, backgroundScope)
-        val vm = MainViewModel(store, ChannelResolver(store, backgroundScope), noFeeds)
+        val vm = MainViewModel(store, ChannelResolver(store, backgroundScope), noFeeds, noSegments)
         val opened = Channel<String>(Channel.UNLIMITED)
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.openRequests.collect { opened.send(it) } }
         return vm to opened
@@ -182,7 +184,7 @@ class MainViewModelTest {
         assertEquals(setOf("library.json"), vm.corruptNotice.value)
         vm.dismissCorruptNotice()
         assertNull(vm.corruptNotice.value)
-        assertNull("a new screen in the same process does not bring it back", MainViewModel(store, ChannelResolver(store, backgroundScope), noFeeds).corruptNotice.value)
+        assertNull("a new screen in the same process does not bring it back", MainViewModel(store, ChannelResolver(store, backgroundScope), noFeeds, noSegments).corruptNotice.value)
     }
 
     @Test fun backupsReportThroughTheEventStream() = runTest {

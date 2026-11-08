@@ -19,6 +19,14 @@ interface PageListener {
 
     /** Where [videoId] should start, or null for the beginning. */
     fun resumePosition(videoId: String): Double?
+
+    /** [videoId]'s SponsorBlock segments for the page. [reply] is called once, later, on the main thread. */
+    fun requestSegments(videoId: String, reply: (SegmentsReply) -> Unit)
+
+    fun onSegmentSkipped(skip: SegmentSkipped)
+
+    /** An ad played on [url]. */
+    fun onAdLeak(url: String)
 }
 
 /**
@@ -36,11 +44,21 @@ internal class Bridge(private val listener: PageListener, private val isCurrent:
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             WebViewCompat.addWebMessageListener(webView, NAME, YouTube.ORIGINS) { view, message, _, isMainFrame, proxy ->
                 val text = message.data
-                if (isMainFrame && text != null && isCurrent(view)) handle(text) { proxy.postMessage(it) }
+                // A late reply (segments) goes nowhere once its WebView is replaced.
+                if (isMainFrame && text != null && isCurrent(view)) handle(text) { if (isCurrent(view)) proxy.postMessage(it) }
             }
         } else {
             webView.addJavascriptInterface(LegacyBridge(webView), NAME)
         }
+    }
+
+    /**
+     * Sends [reply] to [webView]'s page unasked, the way the fallback answers: `main.js`'s receive hook.
+     * Only a YouTube page gets it; a consent or captcha page showing at the time runs nothing of ours.
+     */
+    fun push(webView: WebView, reply: BridgeReply) {
+        if (originOf(webView.url) !in YouTube.ORIGINS) return
+        webView.evaluateJavascript(receiveScript(BridgeMessage.encode(reply)), null)
     }
 
     private fun handle(text: String, reply: (String) -> Unit) {
@@ -48,8 +66,15 @@ internal class Bridge(private val listener: PageListener, private val isCurrent:
             is PageReport -> listener.onPageReport(message)
             is PlaybackEvent -> listener.onPlayback(message)
             is ResumeRequest -> reply(BridgeMessage.encode(ResumeReply(message.videoId, listener.resumePosition(message.videoId))))
+            is SegmentsRequest -> listener.requestSegments(message.videoId) { reply(BridgeMessage.encode(it)) }
+            is SegmentSkipped -> listener.onSegmentSkipped(message)
+            is AdLeak -> listener.onAdLeak(message.url)
         }
     }
+
+    private fun originOf(url: String?): String? = url?.let(Uri::parse)?.let { "${it.scheme}://${it.host}" }
+
+    private fun receiveScript(json: String) = "window.__yourtubeReceive && window.__yourtubeReceive(${JSONObject.quote(json)})"
 
     /**
      * The `addJavascriptInterface` fallback. It cannot tell frames apart, so it accepts a message only
@@ -62,13 +87,10 @@ internal class Bridge(private val listener: PageListener, private val isCurrent:
         fun postMessage(text: String) {
             main.post {
                 if (!isCurrent(webView) || originOf(webView.url) !in YouTube.ORIGINS) return@post
-                handle(text) { json ->
-                    webView.evaluateJavascript("window.__yourtubeReceive && window.__yourtubeReceive(${JSONObject.quote(json)})", null)
-                }
+                handle(text) { json -> if (isCurrent(webView)) webView.evaluateJavascript(receiveScript(json), null) }
             }
         }
 
-        private fun originOf(url: String?): String? = url?.let(Uri::parse)?.let { "${it.scheme}://${it.host}" }
     }
 
     private companion object {

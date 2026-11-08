@@ -32,6 +32,12 @@ class RssFeedTest {
         assertTrue(videos.none { it.title == "Linus Tech Tips" })
     }
 
+    @Test fun aShortIsKnownByItsLink() {
+        val videos = RssFeed.parse(fixture("rss-ltt.xml"), uc)!!
+        // spXuvLHTIs4's entry links to /shorts/; the other two to /watch?v=.
+        assertEquals(listOf(false, true, false), videos.map { it.isShort })
+    }
+
     @Test fun theFeedServersErrorPageIsNotAFeed() {
         assertNull(RssFeed.parse(fixture("rss-404.html"), uc))
     }

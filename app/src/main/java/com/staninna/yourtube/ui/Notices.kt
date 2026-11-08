@@ -20,6 +20,7 @@ object Notices {
         is UiEvent.HistoryCleared -> Notice("History cleared", "Undo")
         is UiEvent.HistoryRemoved -> Notice("Removed from history", "Undo")
         is UiEvent.Unstarred -> Notice("Removed from your library", "Undo")
+        is UiEvent.SegmentSkipped -> Notice(ContentText.skipped(event.category), "Undo")
         is UiEvent.Imported -> Notice(importSummary(event.report))
         is UiEvent.ImportFailed -> Notice(problem(event.problem))
         UiEvent.Exported -> Notice("Library exported")

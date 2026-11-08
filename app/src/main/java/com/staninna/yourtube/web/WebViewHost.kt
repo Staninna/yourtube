@@ -12,12 +12,14 @@ import android.view.ViewGroup
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.core.os.ConfigurationCompat
 import androidx.lifecycle.lifecycleScope
 import com.staninna.yourtube.YouTube
+import com.staninna.yourtube.data.AdLayer
 import com.staninna.yourtube.data.Settings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.ByteArrayInputStream
 import java.util.Locale
 
 /** Observable navigation state of the current WebView. */
@@ -59,7 +62,7 @@ class TubeWebView internal constructor(context: Context, internal val identity: 
 /**
  * Owns the WebView and everything bound to it, for exactly as long as its Activity lives: identity
  * and profile binding, settings, the message bridge, document-start scripts, the navigation policy,
- * navigation state, fullscreen, and render-process recovery.
+ * the network layer of ad blocking, navigation state, fullscreen, and render-process recovery.
  *
  * Compose renders the WebView keyed on [generation] (see `WebViewSlot`), calling [create] and
  * [release], so creation and destruction follow composition. A new identity means a new generation
@@ -93,7 +96,7 @@ class WebViewHost(
     private var webView: TubeWebView? = null
     private var pendingUrl: String? = null
     private var requestedUrl: String? = null
-    private var appliedCss: String = PageScripts.css(settings.value)
+    private var appliedConfig: String = PageConfig.of(settings.value).toString()
 
     /** The theme the current identity's `PREF` cookie carries: seeded, then kept in step by [syncTheme]. */
     private var syncedDark = false
@@ -127,10 +130,17 @@ class WebViewHost(
         if (identity === view.identity) identity = null
     }
 
+    /** Loads [url], or the watch page in its place when it is a Short and Shorts are removed. */
     fun load(url: String) {
-        requestedUrl = url
+        val target = (NavigationPolicy.decide(url, settings.value.removeShorts) as? Navigation.Rewrite)?.url ?: url
+        requestedUrl = target
         _nav.update { it.copy(error = null) }
-        webView?.loadUrl(url) ?: run { pendingUrl = url }
+        webView?.loadUrl(target) ?: run { pendingUrl = target }
+    }
+
+    /** Sends [reply] to the page showing now, unasked (SponsorBlock segments after a settings change, Undo). */
+    fun post(reply: BridgeReply) {
+        webView?.let { bridge.push(it, reply) }
     }
 
     fun goBack() {
@@ -215,9 +225,21 @@ class WebViewHost(
             // Subframes (players, ads) load wherever they point; only main-frame navigation is policed.
             if (!request.isForMainFrame) return false
             val url = request.url.toString()
-            if (NavigationPolicy.opensInApp(url)) return false
-            openExternally(url)
-            return true
+            return when (val decision = NavigationPolicy.decide(url, settings.value.removeShorts)) {
+                Navigation.InApp -> false
+                Navigation.External -> true.also { openExternally(url) }
+                is Navigation.Rewrite -> true.also { view.loadUrl(decision.url) }
+            }
+        }
+
+        // Runs on a WebView thread; settings.value is safe to read there.
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            // A main frame never loads an ad server: the navigation policy sends such links out first.
+            if (request.isForMainFrame || !settings.value.adBlocking.isOn(AdLayer.NETWORK)) return null
+            val url = request.url.toString()
+            if (!AdBlocklist.blocks(url)) return null
+            Log.d(TAG_ADS, "blocked ${url.take(160)}")
+            return WebResourceResponse("text/plain", "utf-8", 204, "No Content", emptyMap(), ByteArrayInputStream(ByteArray(0)))
         }
 
         override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
@@ -287,13 +309,21 @@ class WebViewHost(
         scripts.forget()
     }
 
+    /**
+     * Brings the live page in line with [settings]: future documents get the new scripts, the current one
+     * its new config (CSS at once; the prune, Shorts links and the safety net from their next use), and
+     * a Short on screen when Shorts get removed turns into its watch page. The network layer reads the
+     * settings per request.
+     */
     private fun applySettings(settings: Settings) {
-        val css = PageScripts.css(settings)
-        if (css == appliedCss) return
-        appliedCss = css
+        val config = PageConfig.of(settings).toString()
+        if (config == appliedConfig) return
+        appliedConfig = config
         val view = webView ?: return
         scripts.register(view, settings)
         scripts.applyToCurrentPage(view, settings)
+        val watch = view.url?.takeIf { settings.removeShorts }?.let(NavigationPolicy::shortAsWatch) ?: return
+        view.loadUrl(watch)
     }
 
     private fun isDark(): Boolean =
@@ -307,5 +337,6 @@ class WebViewHost(
 
     private companion object {
         const val TAG = "YT-HOST"
+        const val TAG_ADS = "YT-ADS"
     }
 }

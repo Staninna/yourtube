@@ -44,7 +44,8 @@ class FeedRulesTest {
         controls: FeedControls = FeedControls(),
         size: FeedPageSize = FeedPageSize.P50,
         lib: Library = library,
-    ) = FeedRules.view(lib, res, controls, size)
+        removeShorts: Boolean = false,
+    ) = FeedRules.view(lib, res, controls, size, removeShorts)
 
     @Test fun mergesEveryChannelNewestFirstEachVideoOnce() {
         val v = view()
@@ -178,5 +179,21 @@ class FeedRulesTest {
 
     @Test fun subscriptionsAreStarredChannelsOnly() {
         assertEquals(setOf("A", "B", "C"), FeedRules.subscriptions(library))
+    }
+
+    @Test fun removeShortsLeavesShortsOutOfTheListAndItsCounts() {
+        val short = video("s1", "C", 60).copy(isShort = true)
+        val res = results.finish("C", ok(short, video("c1", "C", 30)))
+        assertEquals(listOf("s1", "a1", "b1", "c1", "a2"), view(res).videos.map { it.videoId })
+        val removed = view(res, removeShorts = true)
+        assertEquals(listOf("a1", "b1", "c1", "a2"), removed.videos.map { it.videoId })
+        assertEquals(4, removed.matching)
+    }
+
+    @Test fun aChannelOfOnlyShortsHasNoVideosWhileShortsAreRemoved() {
+        val only = Library(items = listOf(c))
+        val res = FeedResults().finish("C", ok(video("s1", "C", 60).copy(isShort = true)))
+        assertEquals(Status.NO_VIDEOS, view(res, lib = only, removeShorts = true).status)
+        assertEquals(Status.LIST, view(res, lib = only).status)
     }
 }

@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.os.Build
 import com.staninna.yourtube.data.Store
 import com.staninna.yourtube.page.ChannelResolver
+import com.staninna.yourtube.sponsor.SponsorBlockClient
 import com.staninna.yourtube.web.WebViewStartup
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +21,9 @@ class TubeApp : Application() {
         private set
     lateinit var channels: ChannelResolver
         private set
+
+    /** SponsorBlock lookups; process-wide so its cache outlives a recreated screen. */
+    val segments = SponsorBlockClient()
 
     override fun onCreate() {
         super.onCreate()

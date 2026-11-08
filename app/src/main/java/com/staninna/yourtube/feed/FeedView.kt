@@ -128,12 +128,14 @@ object FeedRules {
     /**
      * The uploads of subscribed channels that carry any selected tag (all when none is), newest first,
      * each video once, revealed [FeedControls.pages] at a time. Chips work as in Library's Subs segment:
-     * OR, and a chip no channel carries any more drops out of the selection.
+     * OR, and a chip no channel carries any more drops out of the selection. With [removeShorts] Shorts
+     * are left out, here and in every count.
      */
-    fun view(library: Library, results: FeedResults, controls: FeedControls, pageSize: FeedPageSize): FeedView {
+    fun view(library: Library, results: FeedResults, controls: FeedControls, pageSize: FeedPageSize, removeShorts: Boolean): FeedView {
         val subs = subscriptions(library)
         val chipView = LibraryFilter.view(library, ItemType.CHANNEL, controls.selection, query = "")
         val shown = chipView.items.flatMap { channel -> results.channels[channel.id]?.videos.orEmpty().map { named(it, channel) } }
+            .filterNot { removeShorts && it.isShort }
             .distinctBy { it.videoId }
             .sortedByDescending { it.publishedAt }
         val failed = chipView.items.filter { results.channels[it.id]?.failure != null }
@@ -148,7 +150,7 @@ object FeedRules {
             failed = failed,
             offline = failures.isNotEmpty() && failures.all { it == FetchFailure.OFFLINE },
             retrying = failed.any { it.id in results.loading },
-            anyVideos = subs.any { results.channels[it]?.videos?.isNotEmpty() == true },
+            anyVideos = subs.any { id -> results.channels[id]?.videos.orEmpty().any { !(removeShorts && it.isShort) } },
             avatars = library.items.filter { it.type == ItemType.CHANNEL }
                 .mapNotNull { channel -> channel.thumbnail?.let { channel.id to it } }.toMap(),
             newVideos = shown.count { it.videoId in results.fresh },

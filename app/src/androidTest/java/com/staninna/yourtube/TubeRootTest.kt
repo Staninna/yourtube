@@ -29,6 +29,7 @@ import com.staninna.yourtube.feed.FeedFetcher
 import com.staninna.yourtube.feed.FeedSource
 import com.staninna.yourtube.data.VideoMeta
 import com.staninna.yourtube.page.ChannelResolver
+import com.staninna.yourtube.sponsor.SegmentSource
 import com.staninna.yourtube.ui.TubeRoot
 import com.staninna.yourtube.ui.theme.TubeTheme
 import com.staninna.yourtube.ui.theme.dynamicColorAvailable
@@ -63,6 +64,7 @@ class TubeRootTest {
             store,
             ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)),
             FeedFetcher { ChannelFetch.Ok(emptyList(), FeedSource.RSS) },
+            SegmentSource { _, _ -> emptyList() },
         )
         lateinit var host: WebViewHost
         compose.runOnUiThread { host = WebViewHost(compose.activity, store.settings, vm, onRestartNeeded = {}) }
@@ -138,7 +140,8 @@ class TubeRootTest {
         setContent()
         compose.onNodeWithContentDescription("More options").performClick()
         compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Dynamic color").assertIsDisplayed()
+        compose.onNodeWithText("Ad blocking").assertIsDisplayed()
+        compose.onNodeWithText("Dynamic color").performScrollTo().assertIsDisplayed()
         // Settings scrolls; About is the last section.
         compose.onNodeWithText("About").performScrollTo().assertIsDisplayed()
 
@@ -160,7 +163,7 @@ class TubeRootTest {
         compose.onNodeWithContentDescription("More options").performClick()
         compose.onNodeWithText("Settings").performClick()
         val row = compose.onNode(hasText("Dynamic color") and SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState))
-        row.assertIsOn()
+        row.performScrollTo().assertIsOn()
         row.performClick()
         compose.waitUntil(5_000) { !store.settings.value.dynamicColor }
         row.assertIsOff()
@@ -183,15 +186,16 @@ class TubeRootTest {
         compose.onNodeWithContentDescription("YouTube home").assertIsDisplayed()
     }
 
-    @Test fun hideShortsSwitchIsStored() {
+    @Test fun removeAllShortsSwitchIsStored() {
         setContent()
         compose.onNodeWithContentDescription("More options").performClick()
         compose.onNodeWithText("Settings").performClick()
-        compose.onNode(hasText("Hide Shorts") and SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState))
+        compose.onNode(hasText("Remove all Shorts") and SemanticsMatcher.keyIsDefined(SemanticsProperties.ToggleableState))
+            .performScrollTo()
             .assertIsOff()
             .performClick()
-        compose.waitUntil(5_000) { store.settings.value.hideShorts }
-        assertEquals(true, store.settings.value.hideShorts)
+        compose.waitUntil(5_000) { store.settings.value.removeShorts }
+        assertEquals(true, store.settings.value.removeShorts)
     }
 
     @Test fun watchTopBarOffersSearchHomeAndOverflow() {

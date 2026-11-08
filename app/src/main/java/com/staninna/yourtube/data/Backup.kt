@@ -131,7 +131,13 @@ object BackupCodec {
         }.distinctBy { it.videoId }
         skipped += backup.history.size - history.size
 
-        return BackupRead.Valid(backup.copy(library = Library(items, tags), history = history), skipped)
+        // Settings replace the current ones whole (BackupMerge), so the server must pass the same check
+        // the Server dialog makes; one that does not falls back to the public server.
+        val sponsor = backup.settings.sponsorBlock
+        val server = (ServerInput.parse(sponsor.server) as? ServerInput.Valid)?.url ?: SponsorBlockSettings.DEFAULT_SERVER
+        val settings = backup.settings.copy(sponsorBlock = sponsor.copy(server = server))
+
+        return BackupRead.Valid(backup.copy(library = Library(items, tags), history = history, settings = settings), skipped)
     }
 
     private fun canonicalUrl(type: ItemType, id: String): String = when (type) {

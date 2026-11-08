@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
 
     private val app: TubeApp get() = application as TubeApp
     private val vm: MainViewModel by viewModels {
-        viewModelFactory { initializer { MainViewModel(app.store, app.channels, YouTubeFeedFetcher()) } }
+        viewModelFactory { initializer { MainViewModel(app.store, app.channels, YouTubeFeedFetcher(), app.segments) } }
     }
     private lateinit var host: WebViewHost
 
@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
         host = WebViewHost(this, app.store.settings, vm, onRestartNeeded = ::restartForNewIdentity)
         (savedInstanceState?.getString(KEY_URL) ?: consumeRestartUrl())?.let(vm::open)
         lifecycleScope.launch { vm.openRequests.collect(host::load) }
+        lifecycleScope.launch { vm.pagePushes.collect(host::post) }
 
         setContent {
             val settings by vm.settings.collectAsStateWithLifecycle()

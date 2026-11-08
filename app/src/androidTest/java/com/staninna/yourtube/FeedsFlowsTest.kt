@@ -25,6 +25,7 @@ import com.staninna.yourtube.feed.FeedFetcher
 import com.staninna.yourtube.feed.FeedSource
 import com.staninna.yourtube.feed.FetchFailure
 import com.staninna.yourtube.page.ChannelResolver
+import com.staninna.yourtube.sponsor.SegmentSource
 import com.staninna.yourtube.ui.FEED_LIST_TAG
 import com.staninna.yourtube.ui.TubeRoot
 import com.staninna.yourtube.ui.theme.TubeTheme
@@ -89,7 +90,9 @@ class FeedsFlowsTest {
     }
 
     private fun setContent() {
-        vm = MainViewModel(store, ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)), fetcher)
+        vm = MainViewModel(
+            store, ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)), fetcher, SegmentSource { _, _ -> emptyList() },
+        )
         lateinit var host: WebViewHost
         compose.runOnUiThread { host = WebViewHost(compose.activity, store.settings, vm, onRestartNeeded = {}) }
         compose.setContent { TubeTheme(dynamicColor = false) { TubeRoot(vm = vm, host = host) } }

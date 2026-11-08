@@ -53,11 +53,39 @@ class WebPolicyTest {
     @Test fun lightThemeAndLanguageOnlyLocale() =
         assertEquals("f6=80000&hl=en", IdentitySeed(dark = false, locale = Locale.forLanguageTag("en")).pref())
 
+    // --- Shorts ---
+
+    @Test fun shortsBecomeWatchPagesWhileRemoved() {
+        for ((short, watch) in listOf(
+            "https://m.youtube.com/shorts/rL0qEmTRI-I" to "https://m.youtube.com/watch?v=rL0qEmTRI-I",
+            "https://www.youtube.com/shorts/rL0qEmTRI-I?si=abc&feature=share" to "https://m.youtube.com/watch?v=rL0qEmTRI-I",
+            "https://youtube.com/shorts/rL0qEmTRI-I/" to "https://m.youtube.com/watch?v=rL0qEmTRI-I",
+        )) {
+            assertEquals(short, watch, NavigationPolicy.shortAsWatch(short))
+            assertEquals(short, Navigation.Rewrite(watch), NavigationPolicy.decide(short, removeShorts = true))
+            assertEquals(short, Navigation.InApp, NavigationPolicy.decide(short, removeShorts = false))
+        }
+    }
+
+    @Test fun onlyAShortsVideoPathIsAShort() {
+        for (url in listOf(
+            "https://m.youtube.com/@veritasium/shorts",
+            "https://m.youtube.com/shorts/",
+            "https://m.youtube.com/shorts/tooshort",
+            "https://m.youtube.com/shorts/rL0qEmTRI-I/extra",
+            "https://m.youtube.com/watch?v=rL0qEmTRI-I",
+            "https://example.com/shorts/rL0qEmTRI-I",
+            "http://m.youtube.com/shorts/rL0qEmTRI-I",
+            "::not a url",
+        )) assertEquals(url, null, NavigationPolicy.shortAsWatch(url))
+        assertEquals(Navigation.External, NavigationPolicy.decide("https://example.com/shorts/rL0qEmTRI-I", removeShorts = true))
+    }
+
     // --- page CSS ---
 
     @Test fun shortsAreHiddenOnlyWhenAsked() {
-        assertFalse(PageScripts.css(Settings(hideShorts = false)).contains("ytm-reel-shelf-renderer"))
-        assertTrue(PageScripts.css(Settings(hideShorts = true)).contains("ytm-reel-shelf-renderer"))
-        assertTrue(PageScripts.css(Settings()).contains("ytm-pivot-bar-renderer{display:none !important}"))
+        assertFalse(PageConfig.css(Settings(removeShorts = false)).contains("ytm-reel-shelf-renderer"))
+        assertTrue(PageConfig.css(Settings(removeShorts = true)).contains("ytm-reel-shelf-renderer"))
+        assertTrue(PageConfig.css(Settings()).contains("ytm-pivot-bar-renderer{display:none !important}"))
     }
 }

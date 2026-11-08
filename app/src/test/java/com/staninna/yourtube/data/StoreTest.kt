@@ -50,14 +50,14 @@ class StoreTest {
     @Test fun libraryAndSettingsAreWrittenRightAwayAndReadBack() = runTest {
         val store = store()
         store.star(video("A"))
-        store.updateSettings { it.copy(hideShorts = true) }
+        store.updateSettings { it.copy(removeShorts = true) }
         runCurrent()
 
         val text = File(dir, "library.json").readText()
         assertTrue(text, text.contains("\"schemaVersion\":1"))
         val reloaded = store()
         assertEquals(listOf("A"), reloaded.library.value.items.map { it.id })
-        assertTrue(reloaded.settings.value.hideShorts)
+        assertTrue(reloaded.settings.value.removeShorts)
         assertTrue(reloaded.corruptFiles.isEmpty())
     }
 
@@ -224,7 +224,7 @@ class StoreTest {
                 tags = listOf(Tag("t-music", "MUSIC", 1), Tag("t-talks", "Talks", 2)),
             ),
             history = listOf(HistoryEntry("bbbbbbbbbbb", position = 30.0, duration = 300.0, watchedAt = 5)),
-            settings = Settings(hideShorts = true),
+            settings = Settings(removeShorts = true),
         )
         val report = store.import(incoming)
         runCurrent()
@@ -236,7 +236,7 @@ class StoreTest {
         assertEquals(setOf(music.id), lib.items.first { it.id == "B" }.tagIds)
         assertEquals(2, lib.items.first { it.id == "A" }.tagIds.size)
         assertEquals(listOf("aaaaaaaaaaa", "bbbbbbbbbbb"), reloaded.history.value.map { it.videoId })
-        assertTrue(reloaded.settings.value.hideShorts)
+        assertTrue(reloaded.settings.value.removeShorts)
     }
 
     @Test fun importIntoAFullHistoryStaysCapped() = runTest {
@@ -303,7 +303,7 @@ class StoreTest {
         File(dir, "settings.json").writeText("""{"schemaVersion":99,"data":{"hideShorts":true}}""")
         val store = store()
         assertEquals(setOf("settings.json"), store.corruptFiles)
-        assertFalse(store.settings.value.hideShorts)
+        assertFalse(store.settings.value.removeShorts)
     }
 
     // --- playback: history with positions ---

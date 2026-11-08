@@ -1,8 +1,10 @@
 package com.staninna.yourtube.data
 
 import com.staninna.yourtube.YouTube
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNames
 
 /** What a library item is. Library's segments are these types: Subs (channels), Videos, Playlists. */
 enum class ItemType { CHANNEL, VIDEO, PLAYLIST }
@@ -120,6 +122,8 @@ data class FeedVideo(
     val author: String,
     val channelId: String,
     val publishedAt: Long,
+    /** RSS links a Short to `/shorts/<id>`. The videos page lists no Shorts, so its videos are never one. */
+    val isShort: Boolean = false,
 ) {
     val url: String get() = YouTube.watchUrl(videoId)
     val thumbnail: String get() = YouTube.thumbnail(videoId)
@@ -134,9 +138,17 @@ enum class FeedPageSize(val count: Int) {
     @SerialName("250") P250(250),
 }
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class Settings(
-    val hideShorts: Boolean = false,
+    /**
+     * Shorts hidden in pages, opened as normal videos, and left out of Feeds. Replaces stage 3's
+     * `hideShorts`, which only hid them: a stored `hideShorts` reads as this switch (settings files and
+     * backups alike), and the next write stores the new name.
+     */
+    @JsonNames("hideShorts") val removeShorts: Boolean = false,
     val dynamicColor: Boolean = true,
     val feedPageSize: FeedPageSize = FeedPageSize.P50,
+    val adBlocking: AdBlocking = AdBlocking(),
+    val sponsorBlock: SponsorBlockSettings = SponsorBlockSettings(),
 )
