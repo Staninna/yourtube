@@ -69,11 +69,14 @@ fun TagChip(
             }
         },
         leadingIcon = {
-            when {
-                selected -> Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize))
-                partial -> Icon(Icons.Filled.Remove, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize))
-                color == null -> UntaggedDot()
-                else -> TagDot(color)
+            // One slot size for the dot, the check and the dash, so a chip keeps its width when tapped.
+            Box(Modifier.size(FilterChipDefaults.IconSize), contentAlignment = Alignment.Center) {
+                when {
+                    selected -> Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize))
+                    partial -> Icon(Icons.Filled.Remove, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize))
+                    color == null -> UntaggedDot()
+                    else -> TagDot(color)
+                }
             }
         },
     )
@@ -115,11 +118,13 @@ fun SegmentedButtons(
                 onCheckedChange = { onSelect(index) },
                 enabled = enabled,
                 modifier = Modifier.weight(1f).semantics { role = Role.RadioButton },
+                // The checked segment keeps its connected shape, flat where it meets its neighbors,
+                // instead of Expressive's default of turning fully round.
                 shapes = when (index) {
                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
                     segments.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                },
+                }.let { it.copy(checkedShape = it.shape) },
             ) {
                 Text(label, maxLines = 1, autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = LocalTextStyle.current.fontSize))
             }

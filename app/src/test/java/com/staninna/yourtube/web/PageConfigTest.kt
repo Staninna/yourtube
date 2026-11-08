@@ -61,6 +61,21 @@ class PageConfigTest {
         assertTrue(bars.endsWith("{background-image:linear-gradient(90deg,#7C3AED 80%,#A855F7) !important}"))
     }
 
+    @Test fun actionsThatNeedAnAccountGoAndShareStays() {
+        val hidden = PageConfig.css(Settings()).lines().flatMap { line ->
+            if (line.endsWith("{display:none !important}")) line.substringBefore('{').split(',') else emptyList()
+        }
+        for (selector in listOf(
+            "like-button-view-model", "dislike-button-view-model", ".YtmCommentRendererDetails", "ytm-comment-simplebox-renderer",
+            ".search-bar-entry-point-buttons", "ytm-chip-cloud-chip-renderer.more-drawer",
+        )) {
+            assertTrue(selector, selector in hidden)
+        }
+        // Share is the action bar's first plain button; only the ones after it go.
+        assertTrue(".slim-video-action-bar-actions > button-view-model ~ button-view-model" in hidden)
+        assertFalse(hidden.any { it.trim().endsWith("> button-view-model") })
+    }
+
     @Test fun theDisplayLayerLeavesThePlayersAdOverlayAlone() =
         assertFalse(PageConfig.css(Settings()).contains(".video-ads"))
 

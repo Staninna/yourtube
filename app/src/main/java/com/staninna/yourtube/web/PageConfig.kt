@@ -36,6 +36,8 @@ object PageConfig {
         add("ytm-app,#app,[has-pivot-bar=\"true\"] ytm-app{padding-bottom:0 !important}")
         add(HEADER_CSS)
         add(NAG_CSS)
+        add(ACCOUNT_CSS)
+        add(HOME_CSS)
         add(BRAND_CSS)
         if (settings.adBlocking.isOn(AdLayer.DISPLAY)) add(DISPLAY_ADS_CSS)
         if (settings.removeShorts) add(SHORTS_CSS)
@@ -103,6 +105,32 @@ object PageConfig {
         "ytm-inline-survey-renderer", "ytm-brand-video-singleton-renderer",
         "yt-page-header-view-model:has(yt-decorated-avatar-view-model) yt-flexible-actions-view-model",
     ).joinToString(",") + "{display:none !important}\n.slim-subscribe-button{visibility:hidden !important}"
+
+    /**
+     * Actions that only ask a signed-out viewer to sign in. Under a video: like, dislike and every
+     * action after Share (Save, Report, Clip, Download and the like); Share is the bar's first plain
+     * button in every layout seen, so it stays by position, whatever the page's language. In comments:
+     * the row with the like, dislike and reply icons and each comment's menu (Report), and the "Add a
+     * comment" box. On posts: like and dislike. Any link to Google's sign-in page goes too.
+     */
+    private val ACCOUNT_CSS = listOf(
+        "like-button-view-model", "dislike-button-view-model",
+        ".slim-video-action-bar-actions > button-view-model ~ button-view-model",
+        ".YtmCommentRendererDetails", "ytm-comment-simplebox-renderer",
+        ".ytCommentActionButtonsRendererHostLikeDislikeActionButtons",
+        "a[href*=\"accounts.google.com/ServiceLogin\"]",
+    ).joinToString(",") + "{display:none !important}"
+
+    /**
+     * Home with nothing watched yet shows only YouTube's logo: the explore drawer (compass), the search
+     * bar and voice search under it, and the "Try searching to get started" card go. Search lives in
+     * the app's own bar. The compass chip in front of home's topic chips goes as well, and with it the
+     * drawer of YouTube Music, Kids and Create.
+     */
+    private val HOME_CSS = listOf(
+        ".search-bar-entry-point-buttons", "ytm-rich-section-renderer:has(ytm-feed-nudge-renderer)",
+        "ytm-chip-cloud-chip-renderer.more-drawer",
+    ).joinToString(",") + "{display:none !important}"
 
     /** The app icon's purple, which takes the place of YouTube's brand red in pages. */
     internal const val BRAND_PURPLE = "#7C3AED"
