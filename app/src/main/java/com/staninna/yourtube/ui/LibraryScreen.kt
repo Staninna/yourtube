@@ -82,7 +82,7 @@ fun LibraryScreen(vm: MainViewModel, onSearch: () -> Unit, onSettings: () -> Uni
                 segments.map { it.label },
                 selectedIndex = segments.indexOf(segment),
                 onSelect = { vm.library.selectSegment(segments[it].type) },
-                modifier = Modifier.padding(top = 8.dp),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
             )
             AnimatedVisibility(view.chips.isNotEmpty()) {
                 FilterChipsRow(

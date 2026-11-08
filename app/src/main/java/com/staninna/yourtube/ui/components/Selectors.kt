@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -79,14 +78,14 @@ fun TagDot(color: Color, modifier: Modifier = Modifier, size: Dp = 10.dp) {
 }
 
 /**
- * Single choice among a few [segments] as an expressive connected button group (Library's
- * Subs | Videos | Playlists). Each segment reads as a radio button to TalkBack.
+ * Single choice among a few [segments] as an expressive connected button group, full width (Library's
+ * Subs | Videos | Playlists, Feeds' page size). Each segment reads as a radio button to TalkBack.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SegmentedButtons(segments: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
     ) {
         segments.forEachIndexed { index, label ->

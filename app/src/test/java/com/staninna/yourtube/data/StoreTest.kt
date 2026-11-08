@@ -61,6 +61,28 @@ class StoreTest {
         assertTrue(reloaded.corruptFiles.isEmpty())
     }
 
+    @Test fun theFeedPageSizeIsStoredByItsCount() = runTest {
+        val store = store()
+        assertEquals(FeedPageSize.P50, store.settings.value.feedPageSize)
+        store.updateSettings { it.copy(feedPageSize = FeedPageSize.P100) }
+        runCurrent()
+        val text = File(dir, "settings.json").readText()
+        assertTrue(text, text.contains("\"feedPageSize\":\"100\""))
+        assertEquals(FeedPageSize.P100, store().settings.value.feedPageSize)
+    }
+
+    @Test fun theFeedCacheIsCappedReadBackAndLeftOutOfBackups() = runTest {
+        val store = store()
+        val uc = "UC" + "a".repeat(22)
+        val videos = List(40) { FeedVideo("v%010d".format(it), "Video $it", "Channel", uc, 1_000L - it) }
+        store.cacheFeeds(mapOf(uc to videos))
+        runCurrent()
+        val reloaded = store()
+        assertEquals(videos.take(Store.FEED_CACHE_PER_CHANNEL), reloaded.feeds.value.getValue(uc))
+        assertTrue(reloaded.corruptFiles.isEmpty())
+        assertFalse("a cache is no backup", BackupCodec.encode(reloaded.backup()).contains("Video 1"))
+    }
+
     @Test fun concurrentUpdatesAreAllKept() = runTest {
         val store = store()
         val threads = (0 until 8).map { t ->
@@ -266,6 +288,15 @@ class StoreTest {
         assertEquals(listOf("A"), next.library.value.items.map { it.id })
         assertNull("the next process finds nothing to report", next.corruptNotice.value)
         assertEquals("{not json", File(dir, "library.json.corrupt").readText())
+    }
+
+    @Test fun aCorruptCacheIsSetAsideWithoutANotice() = runTest {
+        File(dir, "feeds.json").writeText("{not json")
+        File(dir, "channels.json").writeText("{not json")
+        val store = store()
+        assertEquals(setOf("feeds.json", "channels.json"), store.corruptFiles)
+        assertNull("caches refill themselves; nothing to tell the user", store.corruptNotice.value)
+        assertTrue(store.feeds.value.isEmpty())
     }
 
     @Test fun unknownSchemaVersionCountsAsCorrupt() = runTest {

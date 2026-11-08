@@ -69,6 +69,10 @@ fun MediaRow(
     onLongClick: (() -> Unit)? = null,
     /** What the long press does, as TalkBack offers it ("Edit tags"). */
     onLongClickLabel: String? = null,
+    /** Something small before the subtitle, such as Feeds' channel avatar. */
+    subtitleLeading: (@Composable () -> Unit)? = null,
+    /** Text after the subtitle, as " · [subtitleEnd]", that a long subtitle never cuts (Feeds' age). */
+    subtitleEnd: String? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val progress = (leading as? MediaLeading.Thumbnail)?.progress
@@ -98,14 +102,31 @@ fun MediaRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (!subtitle.isNullOrBlank()) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            val text = subtitle?.takeIf { it.isNotBlank() }
+            if (text != null || subtitleLeading != null || subtitleEnd != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    subtitleLeading?.invoke()
+                    Row(Modifier.weight(1f)) {
+                        if (text != null) {
+                            Text(
+                                text,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                        }
+                        subtitleEnd?.let {
+                            Text(
+                                if (text != null) " · $it" else it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
             }
         }
         trailing?.invoke()

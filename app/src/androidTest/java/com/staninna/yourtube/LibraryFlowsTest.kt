@@ -25,6 +25,9 @@ import com.staninna.yourtube.data.ItemType
 import com.staninna.yourtube.data.PlaybackKind
 import com.staninna.yourtube.data.StarredItem
 import com.staninna.yourtube.data.Store
+import com.staninna.yourtube.feed.ChannelFetch
+import com.staninna.yourtube.feed.FeedFetcher
+import com.staninna.yourtube.feed.FeedSource
 import com.staninna.yourtube.data.TagPalette
 import com.staninna.yourtube.data.VideoMeta
 import com.staninna.yourtube.page.ChannelResolver
@@ -58,7 +61,11 @@ class LibraryFlowsTest {
     private lateinit var vm: MainViewModel
 
     private fun setContent() {
-        vm = MainViewModel(store, ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)))
+        vm = MainViewModel(
+            store,
+            ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)),
+            FeedFetcher { ChannelFetch.Ok(emptyList(), FeedSource.RSS) },
+        )
         lateinit var host: WebViewHost
         compose.runOnUiThread { host = WebViewHost(compose.activity, store.settings, vm, onRestartNeeded = {}) }
         compose.setContent { TubeTheme(dynamicColor = false) { TubeRoot(vm = vm, host = host) } }

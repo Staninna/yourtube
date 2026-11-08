@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -22,12 +23,13 @@ import coil.compose.AsyncImage
 
 /**
  * A round channel avatar. Until [url] loads, or without one, it shows [name]'s initial on a color
- * picked from [key], so a channel keeps its color everywhere.
+ * picked from [key], so a channel keeps its color everywhere. It is decoration to TalkBack: the row
+ * around it names the channel, and the placeholder letter would only add noise.
  */
 @Composable
 fun ChannelAvatar(name: String, key: String, url: String?, modifier: Modifier = Modifier, size: Dp = 40.dp) {
     val (container, content) = placeholderColors(key)
-    Box(modifier.size(size).clip(CircleShape).background(container), contentAlignment = Alignment.Center) {
+    Box(modifier.size(size).clip(CircleShape).background(container).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
         Text(
             Placeholder.initial(name),
             color = content,

@@ -18,11 +18,15 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import com.staninna.yourtube.data.ItemType
 import com.staninna.yourtube.data.PlaybackKind
 import com.staninna.yourtube.data.StarredItem
 import com.staninna.yourtube.data.Store
+import com.staninna.yourtube.feed.ChannelFetch
+import com.staninna.yourtube.feed.FeedFetcher
+import com.staninna.yourtube.feed.FeedSource
 import com.staninna.yourtube.data.VideoMeta
 import com.staninna.yourtube.page.ChannelResolver
 import com.staninna.yourtube.ui.TubeRoot
@@ -55,7 +59,11 @@ class TubeRootTest {
     }
 
     private fun setContent() {
-        val vm = MainViewModel(store, ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)))
+        val vm = MainViewModel(
+            store,
+            ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)),
+            FeedFetcher { ChannelFetch.Ok(emptyList(), FeedSource.RSS) },
+        )
         lateinit var host: WebViewHost
         compose.runOnUiThread { host = WebViewHost(compose.activity, store.settings, vm, onRestartNeeded = {}) }
         compose.setContent { TubeTheme(dynamicColor = store.settings.value.dynamicColor) { TubeRoot(vm = vm, host = host) } }
@@ -131,7 +139,8 @@ class TubeRootTest {
         compose.onNodeWithContentDescription("More options").performClick()
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Dynamic color").assertIsDisplayed()
-        compose.onNodeWithText("About").assertIsDisplayed()
+        // Settings scrolls; About is the last section.
+        compose.onNodeWithText("About").performScrollTo().assertIsDisplayed()
 
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.waitForIdle()

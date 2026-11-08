@@ -58,6 +58,8 @@ import androidx.webkit.WebViewCompat
 import com.staninna.yourtube.BuildConfig
 import com.staninna.yourtube.Diagnostics
 import com.staninna.yourtube.MainViewModel
+import com.staninna.yourtube.data.FeedPageSize
+import com.staninna.yourtube.ui.components.SegmentedButtons
 import com.staninna.yourtube.ui.components.SubpageTopBar
 import com.staninna.yourtube.ui.theme.dynamicColorAvailable
 import kotlinx.coroutines.CancellationException
@@ -65,7 +67,7 @@ import kotlinx.coroutines.CancellationException
 /**
  * Settings, pushed over the shell. Sections follow the plan's order (Playback, Content, Feed,
  * Appearance, Library, Privacy, About); a section appears once it has a real setting, so today that
- * is Content, Appearance, Library and About. Back, including the predictive back gesture, shrinks the
+ * is Content, Feed, Appearance, Library and About. Back, including the predictive back gesture, shrinks the
  * screen toward the swiped edge before it leaves. Manage tags opens over it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -122,6 +124,19 @@ fun SettingsScreen(vm: MainViewModel, snackbars: Snackbars, backup: BackupAction
                         SwitchState(settings.hideShorts, enabled = true),
                         vm::setHideShorts,
                         shapes,
+                    )
+                },
+            )
+            Section(
+                "Feed",
+                listOf { shapes ->
+                    ChoiceRow(
+                        "Videos per page",
+                        "Feeds shows this many at first, and Load more adds as many again",
+                        options = FeedPageSize.entries.map { it.count.toString() },
+                        selectedIndex = settings.feedPageSize.ordinal,
+                        onSelect = { vm.feeds.setPageSize(FeedPageSize.entries[it]) },
+                        shapes = shapes,
                     )
                 },
             )
@@ -238,6 +253,28 @@ private fun SwitchRow(title: String, summary: String, state: SwitchState, onChan
         supportingContent = { Text(summary) },
         trailingContent = { Switch(checked = state.checked, onCheckedChange = null, enabled = state.enabled) },
     ) { Text(title) }
+}
+
+/** One choice among a few, as a connected button group under the setting's title. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ChoiceRow(
+    title: String,
+    summary: String,
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    shapes: ListItemShapes,
+) {
+    SegmentedListItem(
+        shapes = shapes,
+        supportingContent = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(summary)
+                SegmentedButtons(options, selectedIndex, onSelect, Modifier.padding(bottom = 4.dp))
+            }
+        },
+    ) { Text(title, Modifier.semantics { heading() }) }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)

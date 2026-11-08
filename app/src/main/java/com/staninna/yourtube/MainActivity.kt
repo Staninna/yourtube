@@ -13,6 +13,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.staninna.yourtube.feed.YouTubeFeedFetcher
 import com.staninna.yourtube.ui.TubeRoot
 import com.staninna.yourtube.ui.theme.TubeTheme
 import com.staninna.yourtube.web.WebViewHost
@@ -28,7 +29,7 @@ class MainActivity : ComponentActivity() {
 
     private val app: TubeApp get() = application as TubeApp
     private val vm: MainViewModel by viewModels {
-        viewModelFactory { initializer { MainViewModel(app.store, app.channels) } }
+        viewModelFactory { initializer { MainViewModel(app.store, app.channels, YouTubeFeedFetcher()) } }
     }
     private lateinit var host: WebViewHost
 

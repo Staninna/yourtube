@@ -1,6 +1,7 @@
 package com.staninna.yourtube.data
 
 import com.staninna.yourtube.YouTube
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /** What a library item is. Library's segments are these types: Subs (channels), Videos, Playlists. */
@@ -106,20 +107,36 @@ data class ChannelInfo(val id: String, val name: String, val avatar: String?)
 @Serializable
 data class CachedChannel(val info: ChannelInfo, val fetchedAt: Long)
 
-/** A newest-upload entry parsed from a channel's RSS feed. */
+/**
+ * One upload in Feeds, read from a channel's RSS feed or its videos page. [publishedAt] is exact from
+ * RSS and rounded from the page ("3 days ago"); either way the list sorts by it. Serializable for the
+ * store's feed cache, which is why it lives here and not in `feed`.
+ */
 @Serializable
 data class FeedVideo(
     val videoId: String,
     val title: String,
+    /** The channel's name; blank when RSS gave none (Feeds then shows the subscription's title). */
     val author: String,
     val channelId: String,
-    val thumbnail: String,
     val publishedAt: Long,
-    val url: String,
-)
+) {
+    val url: String get() = YouTube.watchUrl(videoId)
+    val thumbnail: String get() = YouTube.thumbnail(videoId)
+}
+
+/** How many videos Feeds shows at first and adds with each Load more. Stored by its count. */
+@Serializable
+enum class FeedPageSize(val count: Int) {
+    @SerialName("25") P25(25),
+    @SerialName("50") P50(50),
+    @SerialName("100") P100(100),
+    @SerialName("250") P250(250),
+}
 
 @Serializable
 data class Settings(
     val hideShorts: Boolean = false,
     val dynamicColor: Boolean = true,
+    val feedPageSize: FeedPageSize = FeedPageSize.P50,
 )

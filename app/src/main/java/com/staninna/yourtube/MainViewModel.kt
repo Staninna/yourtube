@@ -2,14 +2,13 @@ package com.staninna.yourtube
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.staninna.yourtube.data.FeedVideo
-import com.staninna.yourtube.data.ItemType
 import com.staninna.yourtube.data.Library
 import com.staninna.yourtube.data.PlaybackKind
 import com.staninna.yourtube.data.StarredItem
 import com.staninna.yourtube.data.Store
 import com.staninna.yourtube.data.WatchProgress
-import com.staninna.yourtube.feed.FeedClient
+import com.staninna.yourtube.feed.FeedFetcher
+import com.staninna.yourtube.feed.FeedRules
 import com.staninna.yourtube.page.ChannelResolver
 import com.staninna.yourtube.page.NowPlaying
 import com.staninna.yourtube.page.PageIdentity
@@ -37,6 +36,7 @@ enum class Tab { WATCH, FEEDS, LIBRARY, HISTORY }
 class MainViewModel(
     private val store: Store,
     private val channels: ChannelResolver,
+    feedFetcher: FeedFetcher,
 ) : ViewModel(), PageListener {
 
     val history = store.history
@@ -81,6 +81,9 @@ class MainViewModel(
     /** Starring, tags and Library's view. */
     val library = LibraryModel(store, channels, viewModelScope, starTarget, emit = { _events.trySend(it) })
 
+    /** Feeds: subscribed channels' uploads, chips and paging. */
+    val feeds = FeedsModel(store, feedFetcher, viewModelScope)
+
     private val backups = BackupTransfer(store)
 
     private val opens = Channel<String>(Channel.BUFFERED)
@@ -88,16 +91,6 @@ class MainViewModel(
 
     /** URLs the WebView should load, in order. */
     val openRequests: Flow<String> = opens.receiveAsFlow()
-
-    private val _feeds = MutableStateFlow<List<FeedVideo>>(emptyList())
-    val feeds: StateFlow<List<FeedVideo>> = _feeds.asStateFlow()
-
-    private val _feedsLoading = MutableStateFlow(false)
-    val feedsLoading: StateFlow<Boolean> = _feedsLoading.asStateFlow()
-
-    /** Whether any channel is starred; without one Feeds has nothing to fetch. */
-    val hasSubscriptions: StateFlow<Boolean> = store.library.map(::anySubscription)
-        .stateIn(viewModelScope, SharingStarted.Eagerly, anySubscription(store.library.value))
 
     init {
         // A video can start playing before the player confirms its title; fill it in once it does.
@@ -195,24 +188,6 @@ class MainViewModel(
         if (channels.resolve(page.path) == null) Diagnostics.count("channel.unresolved", page.path)
     }
 
-    // --- feeds ---
-
-    fun refreshFeeds() {
-        val channelIds = store.library.value.items.filter { it.type == ItemType.CHANNEL }.mapNotNull { it.channelId }
-        if (channelIds.isEmpty()) {
-            _feeds.value = emptyList()
-            return
-        }
-        viewModelScope.launch {
-            _feedsLoading.value = true
-            try {
-                _feeds.value = FeedClient.latest(channelIds)
-            } finally {
-                _feedsLoading.value = false
-            }
-        }
-    }
-
     // --- settings ---
 
     fun setHideShorts(enabled: Boolean) = store.updateSettings { it.copy(hideShorts = enabled) }
@@ -220,8 +195,6 @@ class MainViewModel(
 
     companion object {
         /** A cold launch opens Feeds, or Library when there is nothing to feed from. */
-        fun startTab(library: Library): Tab = if (anySubscription(library)) Tab.FEEDS else Tab.LIBRARY
-
-        private fun anySubscription(library: Library) = library.items.any { it.type == ItemType.CHANNEL }
+        fun startTab(library: Library): Tab = if (FeedRules.subscriptions(library).isEmpty()) Tab.LIBRARY else Tab.FEEDS
     }
 }

@@ -15,11 +15,11 @@ import java.io.File
 import java.util.UUID
 
 /**
- * The app's first-party state: library, tags, history (which holds resume positions), settings and
- * the channel cache. Identity changes never touch it. Every mutation is one atomic `update {}` on its
- * file.
+ * The app's first-party state: library, tags, history (which holds resume positions), settings, and
+ * the channel and feed caches. Identity changes never touch it. Every mutation is one atomic
+ * `update {}` on its file.
  *
- * Library, settings and channel changes are written right away. History changes with every playback
+ * Library, settings, channel and feed changes are written right away. History changes with every playback
  * event, so it is kept in memory and written every [PLAYBACK_FLUSH_MS] while playing, and on [flush]
  * (pause, end, Activity stop and destroy).
  *
@@ -37,7 +37,10 @@ class Store(
     private val channelsFile = StoreFile(
         dir, "channels.json", MapSerializer(String.serializer(), CachedChannel.serializer()), emptyMap(), scope,
     )
-    private val files = listOf(libraryFile, historyFile, settingsFile, channelsFile)
+    private val feedsFile = StoreFile(
+        dir, "feeds.json", MapSerializer(String.serializer(), ListSerializer(FeedVideo.serializer())), emptyMap(), scope,
+    )
+    private val files = listOf(libraryFile, historyFile, settingsFile, channelsFile, feedsFile)
 
     val library: StateFlow<Library> = libraryFile.state
 
@@ -48,14 +51,24 @@ class Store(
     /** Resolved channels keyed by channel page path (see `PageIdentity.Channel.path`). */
     val channels: StateFlow<Map<String, CachedChannel>> = channelsFile.state
 
+    /**
+     * Each subscribed channel's last uploads by channel id: a cache, so a cold start shows Feeds at
+     * once while it refreshes. Backups leave it out.
+     */
+    val feeds: StateFlow<Map<String, List<FeedVideo>>> = feedsFile.state
+
     /** Files that could not be read at startup; each was kept as `<name>.corrupt`. */
     val corruptFiles: Set<String> = files.filter { it.loadResult == LoadResult.CORRUPT }.map { it.name }.toSet()
 
-    private val _corruptNotice = MutableStateFlow(corruptFiles.takeIf { it.isNotEmpty() })
+    // Only the user's own data earns a notice; the channel and feed caches refill themselves.
+    private val _corruptNotice = MutableStateFlow(
+        listOf(libraryFile, historyFile, settingsFile).map { it.name }.filter { it in corruptFiles }.toSet().takeIf { it.isNotEmpty() },
+    )
 
     /**
-     * [corruptFiles] until the user has answered the notice about them (dismissed it or exported). It
-     * outlives any one screen; the next process finds the files moved aside, so it shows once per damage.
+     * The user-data files among [corruptFiles], until the user has answered the notice about them
+     * (dismissed it or exported). It outlives any one screen; the next process finds the files moved
+     * aside, so it shows once per damage.
      */
     val corruptNotice: StateFlow<Set<String>?> = _corruptNotice.asStateFlow()
 
@@ -244,8 +257,19 @@ class Store(
 
     fun cacheChannel(path: String, info: ChannelInfo) = channelsFile.update { it + (path to CachedChannel(info, now())) }
 
+    // --- feed cache ---
+
+    /** Replaces the feed cache with [feeds], at most [FEED_CACHE_PER_CHANNEL] videos per channel. */
+    fun cacheFeeds(feeds: Map<String, List<FeedVideo>>) {
+        val capped = feeds.mapValues { (_, videos) -> videos.take(FEED_CACHE_PER_CHANNEL) }
+        if (capped != feedsFile.value) feedsFile.update { capped }
+    }
+
     companion object {
         const val HISTORY_CAP = 2000
+
+        /** A channel's videos page lists 30 uploads, RSS 15; the cache keeps that many. */
+        const val FEED_CACHE_PER_CHANNEL = 30
         const val PLAYBACK_FLUSH_MS = 10_000L
     }
 }

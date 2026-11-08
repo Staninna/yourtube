@@ -32,6 +32,20 @@ fun librarySubtitle(item: StarredItem, tags: List<String>): String? {
 }
 
 /**
+ * Feeds' notice for channels whose latest fetch failed ([names], at least one): "Veritasium didn't
+ * load.", "A and B didn't load.", "A and 3 other channels didn't load.", led by "You're offline." when
+ * a missing connection is why.
+ */
+fun feedFailureNotice(names: List<String>, offline: Boolean): String {
+    val who = when (names.size) {
+        1 -> names[0]
+        2 -> "${names[0]} and ${names[1]}"
+        else -> "${names[0]} and ${names.size - 1} other channels"
+    }
+    return (if (offline) "You're offline. " else "") + "$who didn't load."
+}
+
+/**
  * A history day header: "Today", "Yesterday", then the weekday and date ("Monday 3 November"),
  * with the year once it is not [today]'s.
  */
