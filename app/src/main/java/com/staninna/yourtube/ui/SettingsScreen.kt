@@ -104,17 +104,28 @@ fun SettingsScreen(vm: MainViewModel, snackbars: Snackbars, backup: BackupAction
         ) {
             Section(
                 "Playback",
-                listOf { shapes ->
-                    ChoiceRow(
-                        "Picture-in-picture",
-                        SettingsModel.pipSummary(settings.pip, pipSupport),
-                        options = SettingsModel.pipOptions,
-                        selectedIndex = settings.pip.ordinal,
-                        onSelect = { vm.pip.setMode(PipMode.entries[it]) },
-                        shapes = shapes,
-                        enabled = pipSupport == PipSupport.AVAILABLE,
-                    )
-                },
+                listOf<SettingRow>(
+                    { shapes ->
+                        ChoiceRow(
+                            "Picture-in-picture",
+                            SettingsModel.pipSummary(settings.pip, pipSupport),
+                            options = SettingsModel.pipOptions,
+                            selectedIndex = settings.pip.ordinal,
+                            onSelect = { vm.pip.setMode(PipMode.entries[it]) },
+                            shapes = shapes,
+                            enabled = pipSupport == PipSupport.AVAILABLE,
+                        )
+                    },
+                    { shapes ->
+                        SwitchRow(
+                            "Swipe for volume and brightness",
+                            "On the video, swipe up or down: the right side sets the volume, the left side the brightness",
+                            SwitchState(settings.playerGestures, enabled = true),
+                            vm::setPlayerGestures,
+                            shapes,
+                        )
+                    },
+                ),
             )
             ContentSettings(settings, vm)
             Section(

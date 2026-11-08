@@ -122,7 +122,13 @@ class WebViewHost(
     /** Whether the page shows only the video; its box then is the PiP window's and says nothing. */
     private var filling = false
 
-    private val bridge = Bridge(listener, isCurrent = { it === webView }, onVideoBox = { if (!filling) _videoBox.value = it })
+    private val gestures = PlayerGestures(activity)
+    private val bridge = Bridge(
+        listener,
+        isCurrent = { it === webView },
+        onVideoBox = { if (!filling) _videoBox.value = it },
+        onSwipe = { if (settings.value.playerGestures) gestures.on(it) },
+    )
     private val scripts = PageScripts(activity.assets)
     private val chrome = FullscreenChromeClient(activity, current = { webView }) { view, progress ->
         if (view === webView) _nav.update { it.copy(progress = progress) }
@@ -454,6 +460,7 @@ class WebViewHost(
      * settings per request.
      */
     private fun applySettings(settings: Settings) {
+        if (!settings.playerGestures) gestures.reset()
         val config = PageConfig.of(settings).toString()
         if (config == appliedConfig) return
         appliedConfig = config

@@ -84,6 +84,22 @@ class PageConfigTest {
         assertFalse(hidden.any { it.trim().endsWith("> button-view-model") })
     }
 
+    @Test fun thePlayersOwnLikeDislikeAndSaveGo() {
+        val hidden = PageConfig.css(Settings()).lines().flatMap { line ->
+            if (line.endsWith("{display:none !important}")) line.substringBefore('{').split(',') else emptyList()
+        }
+        for (selector in listOf(".ytp-fullscreen-quick-actions", "#movie_player like-button-view-model", "#movie_player .ytp-watch-later-button")) {
+            assertTrue(selector, selector in hidden)
+        }
+        // The player's own controls stay.
+        assertFalse(hidden.any { it.trim() == "#movie_player" || ".player-controls-content" in it })
+    }
+
+    @Test fun playerGesturesReachTheScript() {
+        assertEquals(JsonPrimitive(true), PageConfig.of(Settings())["playerGestures"])
+        assertEquals(JsonPrimitive(false), PageConfig.of(Settings(playerGestures = false))["playerGestures"])
+    }
+
     @Test fun theDisplayLayerLeavesThePlayersAdOverlayAlone() =
         assertFalse(PageConfig.css(Settings()).contains(".video-ads"))
 

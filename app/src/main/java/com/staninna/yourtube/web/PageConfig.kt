@@ -17,6 +17,7 @@ import kotlinx.serialization.json.buildJsonObject
  * - `removeShorts`: whether `main.js` sends Shorts links to the watch page.
  * - `segmentColors`: CSS colors by SponsorBlock category API name, for the progress bar marks.
  * - `fillCss`: the stylesheet `early.js` turns on in picture-in-picture.
+ * - `playerGestures`: whether `main.js` turns vertical swipes on the video into volume and brightness.
  */
 object PageConfig {
 
@@ -26,6 +27,7 @@ object PageConfig {
         put("prune", if (settings.adBlocking.isOn(AdLayer.PLAYER)) PlayerAdPrune.json else JsonNull)
         put("adSafetyNet", JsonPrimitive(settings.adBlocking.isOn(AdLayer.SAFETY_NET)))
         put("removeShorts", JsonPrimitive(settings.removeShorts))
+        put("playerGestures", JsonPrimitive(settings.playerGestures))
         put("segmentColors", JsonObject(SegmentCategory.entries.associate { it.apiName to JsonPrimitive(cssColor(it.color)) }))
     }
 
@@ -37,6 +39,7 @@ object PageConfig {
         add(HEADER_CSS)
         add(NAG_CSS)
         add(ACCOUNT_CSS)
+        add(PLAYER_ACTIONS_CSS)
         add(DRAWER_CSS)
         add(BRAND_CSS)
         if (settings.adBlocking.isOn(AdLayer.DISPLAY)) add(DISPLAY_ADS_CSS)
@@ -122,6 +125,20 @@ object PageConfig {
         ".YtmCommentRendererDetails", "ytm-comment-simplebox-renderer",
         ".ytCommentActionButtonsRendererHostLikeDislikeActionButtons",
         "a[href*=\"accounts.google.com/ServiceLogin\"]",
+    ).joinToString(",") + "{display:none !important}"
+
+    /**
+     * The actions YouTube lays over the video itself (most of all in fullscreen): like, dislike, save
+     * and their row of quick actions, which only ask a signed-out viewer to sign in. Comments stay
+     * under the video, and Share is in Watch's menu. The player's names (`ytp-`) and the view-model
+     * names the watch page uses are both covered, since the mobile player has used each.
+     */
+    private val PLAYER_ACTIONS_CSS = listOf(
+        ".ytp-fullscreen-quick-actions", "yt-player-quick-action-buttons", ".ytPlayerQuickActionButtonsHost",
+        ".ytp-quick-actions", ".fullscreen-action-menu", "ytm-fullscreen-action-menu",
+        "#movie_player like-button-view-model", "#movie_player dislike-button-view-model",
+        "#movie_player segmented-like-dislike-button-view-model", "#movie_player .ytp-watch-later-button",
+        "#movie_player .ytp-playlist-menu-button", "#movie_player add-to-playlist-button-view-model",
     ).joinToString(",") + "{display:none !important}"
 
     /**

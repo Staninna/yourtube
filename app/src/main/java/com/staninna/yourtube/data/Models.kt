@@ -223,6 +223,8 @@ data class Settings(
     val adBlocking: AdBlocking = AdBlocking(),
     val sponsorBlock: SponsorBlockSettings = SponsorBlockSettings(),
     val pip: PipMode = PipMode.AUTO,
+    /** Vertical swipes on the video: the right half sets the volume, the left half the screen's brightness. */
+    val playerGestures: Boolean = true,
     /** Whether Watch's top bar shows the new-identity (mask) button. */
     val showNewIdentity: Boolean = true,
     /** The hourly check of subscribed channels that notifies about new uploads. Off until asked for. */

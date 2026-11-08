@@ -57,6 +57,7 @@ internal class Bridge(
     private val listener: PageListener,
     private val isCurrent: (WebView) -> Boolean,
     private val onVideoBox: (VideoBox) -> Unit,
+    private val onSwipe: (Swipe) -> Unit = {},
 ) {
 
     @SuppressLint("JavascriptInterface", "AddJavascriptInterface")
@@ -92,6 +93,7 @@ internal class Bridge(
             ConsentRejected -> listener.onConsentRejected()
             is ViewerMute -> listener.onViewerMute(message.muted)
             is VideoBox -> onVideoBox(message)
+            is Swipe -> onSwipe(message)
         }
     }
 

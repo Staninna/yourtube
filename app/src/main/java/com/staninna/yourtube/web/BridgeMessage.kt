@@ -148,6 +148,30 @@ data class VideoBox(
     val viewportWidth: Double,
 ) : BridgeMessage
 
+/**
+ * A vertical swipe on the video. [amount] is how far it has gone up since it started, as a share of
+ * the player's height (down is negative); the app moves [control] by as much of its range.
+ */
+@Serializable
+@SerialName("swipe")
+data class Swipe(val control: Control, val phase: Phase, val amount: Double = 0.0) : BridgeMessage {
+    @Serializable
+    enum class Control {
+        /** The right half of the video. */
+        @SerialName("volume") VOLUME,
+
+        /** The left half of the video. */
+        @SerialName("brightness") BRIGHTNESS,
+    }
+
+    @Serializable
+    enum class Phase {
+        @SerialName("start") START,
+        @SerialName("move") MOVE,
+        @SerialName("end") END,
+    }
+}
+
 /** Messages the app sends back to the page, with the same `type` discriminator. */
 @Serializable
 sealed interface BridgeReply

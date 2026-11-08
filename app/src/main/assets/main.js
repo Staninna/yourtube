@@ -1,6 +1,6 @@
 // YourTube main script. Runs in the main frame once the DOM is ready. It reports raw facts to the
 // app through window.TubeBridge and never decides what a page is; that happens in Kotlin.
-// Messages out (JSON): page, playback, videoBox, resume, mute, segments, skipped, adLeak; consent.js
+// Messages out (JSON): page, playback, videoBox, resume, mute, segments, skipped, adLeak, swipe; consent.js
 // sends consent. Messages in: resume, segments, undoSkip, and the media session's play, pause and
 // seek. See BridgeMessage.kt.
 // Settings come from early.js (window.__yourtubeConfig).
@@ -418,6 +418,69 @@
         'background:linear-gradient(to right,' + stops.join(',') + ')}',
       )
     }
+
+    // --- swipes on the video: up and down on the right half is volume, on the left half brightness ---
+    // The app sets both (PlayerGestures.kt); the page only says how far the finger has gone, as a share
+    // of the player's height. A swipe is told apart from a tap, a horizontal drag (scrubbing) and a
+    // pinch, which stay YouTube's; once it is one, YouTube sees none of its moves or its end, so it
+    // neither scrolls the page, nor leaves fullscreen, nor toggles the controls. Shorts swipe to the
+    // next Short and are left alone.
+    var SWIPE_SLOP = 12
+    var swipe = null
+    function swipeEnabled() { return config().playerGestures && !/^\/shorts\//.test(location.pathname) }
+    window.addEventListener('touchstart', function (e) {
+      swipe = null
+      if (e.touches.length !== 1 || !swipeEnabled()) return
+      var p = player()
+      if (!p || !p.contains(e.target)) return
+      var box = p.getBoundingClientRect()
+      if (box.width < 1 || box.height < 1) return
+      var t = e.touches[0]
+      swipe = {
+        x: t.clientX, y: t.clientY, height: box.height, active: false,
+        control: t.clientX - box.left >= box.width / 2 ? 'volume' : 'brightness',
+      }
+    }, { capture: true, passive: true })
+    window.addEventListener('touchmove', function (e) {
+      if (!swipe) return
+      var t = e.touches[0]
+      if (e.touches.length !== 1 || !t) {
+        endSwipe()
+        return
+      }
+      var dx = t.clientX - swipe.x
+      var dy = t.clientY - swipe.y
+      if (!swipe.active) {
+        // Mostly sideways: the page's (scrubbing, the chapters); the page does not scroll meanwhile.
+        if (Math.abs(dx) > Math.abs(dy)) {
+          if (Math.abs(dx) >= SWIPE_SLOP) swipe = null
+          return
+        }
+        if (e.cancelable) e.preventDefault()
+        if (Math.abs(dy) < SWIPE_SLOP) return
+        swipe.active = true
+        // Measured from here, so the level does not jump by the slop.
+        swipe.y = t.clientY
+        dy = 0
+        post({ type: 'swipe', control: swipe.control, phase: 'start', amount: 0 })
+      }
+      if (e.cancelable) e.preventDefault()
+      e.stopImmediatePropagation()
+      post({ type: 'swipe', control: swipe.control, phase: 'move', amount: -dy / swipe.height })
+    }, { capture: true, passive: false })
+    function endSwipe(e) {
+      var ended = swipe
+      swipe = null
+      if (!ended || !ended.active) return
+      if (e) {
+        // No click after it, so the controls do not toggle.
+        if (e.cancelable) e.preventDefault()
+        e.stopImmediatePropagation()
+      }
+      post({ type: 'swipe', control: ended.control, phase: 'end', amount: 0 })
+    }
+    window.addEventListener('touchend', endSwipe, { capture: true, passive: false })
+    window.addEventListener('touchcancel', endSwipe, { capture: true, passive: false })
 
     if (!leaveShort()) report('load')
   }

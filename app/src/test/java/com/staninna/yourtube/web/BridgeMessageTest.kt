@@ -9,6 +9,20 @@ import org.junit.Test
 
 class BridgeMessageTest {
 
+    @Test fun decodesASwipe() {
+        assertEquals(
+            Swipe(Swipe.Control.VOLUME, Swipe.Phase.MOVE, 0.25),
+            BridgeMessage.decode("""{"type":"swipe","control":"volume","phase":"move","amount":0.25}"""),
+        )
+        assertEquals(
+            Swipe(Swipe.Control.BRIGHTNESS, Swipe.Phase.END),
+            BridgeMessage.decode("""{"type":"swipe","control":"brightness","phase":"end"}"""),
+        )
+    }
+
+    @Test fun aSwipeOfAnUnknownControlIsDropped() =
+        assertNull(BridgeMessage.decode("""{"type":"swipe","control":"zoom","phase":"move","amount":1}"""))
+
     @Test fun decodesAPageReport() {
         val message = BridgeMessage.decode(
             """{"type":"page","reason":"metadata","url":"https://m.youtube.com/watch?v=dQw4w9WgXcQ",
