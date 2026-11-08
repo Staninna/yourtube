@@ -9,7 +9,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** D4's rows without picture-in-picture, one test per row. */
+/** D4's rows, one test per row. Entering picture-in-picture is `PipTest`'s. */
 class BackgroundPlaybackTest {
 
     /** Feeds events in order at the given times and keeps every effect. */
@@ -27,6 +27,7 @@ class BackgroundPlaybackTest {
         fun hidden(at: Long = 0) = on(Event.Visibility(false), at)
         fun playing(at: Long = 0) = on(Event.Playback(video = true, playing = true), at)
         fun paused(at: Long = 0) = on(Event.Playback(video = true, playing = false), at)
+        fun pip(inPip: Boolean, at: Long = 0) = on(Event.Pip(inPip), at)
     }
 
     /** In the app with the video playing: the session runs. */
@@ -132,5 +133,42 @@ class BackgroundPlaybackTest {
     @Test fun afterAReleasePlayingInTheAppStartsANewSession() {
         val run = playingInApp().hidden().on(Event.TaskRemoved).shown().playing()
         assertEquals(listOf(Effect.START, Effect.RELEASE, Effect.START), run.effects)
+    }
+
+    // --- picture-in-picture ---
+
+    @Test fun inPipTheVideoPlaysOnWithItsSession() {
+        // The Activity stays started in its picture-in-picture window.
+        val run = playingInApp().pip(true).paused(at = 1_000).on(Event.Tick, at = 2 * GRACE_MS)
+        assertTrue(run.state.pip && run.state.session)
+        assertNull("a paused video in the window does not count down", run.state.releaseAt)
+        assertEquals(listOf(Effect.START), run.effects)
+    }
+
+    @Test fun closingThePipWindowPausesAndEndsTheSession() {
+        // Closing stops the Activity first; picture-in-picture ends after that.
+        val run = playingInApp().pip(true).hidden(at = 1_000).pip(false, at = 1_000)
+        assertFalse(run.state.session)
+        assertFalse(run.state.pip)
+        assertEquals(listOf(Effect.START, Effect.RELEASE), run.effects)
+    }
+
+    @Test fun expandingThePipWindowKeepsTheSameSession() {
+        val run = playingInApp().pip(true).pip(false, at = 1_000)
+        assertTrue(run.state.session && run.state.playing && !run.state.pip)
+        assertEquals(listOf(Effect.START), run.effects)
+    }
+
+    @Test fun theScreenGoingOffInPipIsNoClose() {
+        val run = playingInApp().pip(true).hidden(at = 1_000).shown(at = 2_000)
+        assertTrue(run.state.session && run.state.pip)
+        run.pip(false, at = 3_000)
+        assertEquals(listOf(Effect.START), run.effects)
+    }
+
+    @Test fun swipingAPipTaskAwayEndsItsSession() {
+        val run = playingInApp().pip(true).on(Event.TaskRemoved, at = 1_000)
+        assertFalse(run.state.session || run.state.pip)
+        assertEquals(listOf(Effect.START, Effect.RELEASE), run.effects)
     }
 }

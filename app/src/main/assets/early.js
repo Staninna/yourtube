@@ -1,9 +1,10 @@
 // YourTube early script. Runs at document start in every YouTube frame, before page scripts.
 // It touches no DOM elements (there are none yet): the app CSS goes in as an adopted stylesheet, and
 // the player-ads layer wraps JSON.parse, fetch and XHR. Background playback needs nothing here: the
-// WebView reports a visible window while it may play (TubeWebView). Native replaces the config literal
-// at the bottom with the current settings (see PageConfig.kt); running the script again swaps the
-// config in place, and main.js reads it from here.
+// WebView reports a visible window while it may play (TubeWebView). Picture-in-picture needs the
+// window's outer size pinned and a stylesheet that fills the window with the video. Native replaces
+// the config literal at the bottom with the current settings (see PageConfig.kt); running the script
+// again swaps the config in place, and main.js reads it from here.
 (function (config) {
   'use strict'
   var KEY = '__yourtubeEarly'
@@ -11,14 +12,47 @@
 
   var current = config
   var sheet = new CSSStyleSheet()
+  // On only in picture-in-picture: native turns it on and off (WebViewHost.fillWithVideo).
+  var fill = new CSSStyleSheet()
+  var filling = false
   function apply(c) {
     current = c
-    try { sheet.replaceSync(c.css || '') } catch (e) {}
+    try {
+      sheet.replaceSync(c.css || '')
+      fill.replaceSync(filling ? c.fillCss || '' : '')
+    } catch (e) {}
   }
   apply(config)
-  document.adoptedStyleSheets = document.adoptedStyleSheets.concat([sheet])
+  document.adoptedStyleSheets = document.adoptedStyleSheets.concat([sheet, fill])
   Object.defineProperty(window, KEY, { value: apply })
   Object.defineProperty(window, '__yourtubeConfig', { get: function () { return current } })
+  Object.defineProperty(window, '__yourtubeFill', {
+    value: function (on) {
+      filling = !!on
+      apply(current)
+    },
+  })
+
+  // --- the window's outer size never drops to picture-in-picture size ---
+  // YouTube compares outerWidth * outerHeight with the largest area it has seen, takes a big drop for
+  // picture-in-picture, and then pauses a video signed-out viewers may not play in the background
+  // (stage 0). A window under half the largest area seen reports that largest size instead; a turned
+  // screen, the keyboard or a split screen keep their real size.
+  var outerWidth = Object.getOwnPropertyDescriptor(window, 'outerWidth')
+  var outerHeight = Object.getOwnPropertyDescriptor(window, 'outerHeight')
+  if (outerWidth && outerWidth.get && outerWidth.configurable && outerHeight && outerHeight.get && outerHeight.configurable) {
+    var largest = { width: 0, height: 0 }
+    var outer = function () {
+      var width = outerWidth.get.call(window)
+      var height = outerHeight.get.call(window)
+      var area = width * height
+      var most = largest.width * largest.height
+      if (area >= most) largest = { width: width, height: height }
+      return area < most / 2 ? largest : { width: width, height: height }
+    }
+    Object.defineProperty(window, 'outerWidth', { configurable: true, enumerable: true, get: function () { return outer().width } })
+    Object.defineProperty(window, 'outerHeight', { configurable: true, enumerable: true, get: function () { return outer().height } })
+  }
 
   // --- player ads: ad data leaves player responses before the player reads them ---
   // The rules (config.prune, null while the layer is off) are PlayerAdPrune in PageConfig.kt: keys to

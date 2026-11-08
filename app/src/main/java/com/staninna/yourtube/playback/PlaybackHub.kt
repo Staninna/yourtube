@@ -14,9 +14,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Where the page and the media session meet, for the whole process (D3). The Activity attaches its
- * page and reports whether it is visible; its ViewModel publishes what plays; the media session reads
- * [media] and sends its commands through [send]. When the session lives is [BackgroundPlayback]'s call.
- * Main thread only.
+ * page and reports whether it is visible and in picture-in-picture; its ViewModel publishes what
+ * plays; the media session reads [media] and sends its commands through [send]. When the session
+ * lives is [BackgroundPlayback]'s call. Main thread only.
  */
 class PlaybackHub(
     private val scope: CoroutineScope,
@@ -47,6 +47,7 @@ class PlaybackHub(
         if (this.page !== page) return
         this.page = null
         publish(null)
+        setPip(false)
     }
 
     fun publish(nowPlaying: NowPlaying?) {
@@ -63,6 +64,8 @@ class PlaybackHub(
     fun setVisible(visible: Boolean) = on(Event.Visibility(visible))
 
     fun taskRemoved() = on(Event.TaskRemoved)
+
+    fun setPip(inPip: Boolean) = on(Event.Pip(inPip))
 
     private fun on(event: Event) {
         val step = _state.value.on(event, now())

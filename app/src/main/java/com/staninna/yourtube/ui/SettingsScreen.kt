@@ -45,6 +45,8 @@ import com.staninna.yourtube.BuildConfig
 import com.staninna.yourtube.Diagnostics
 import com.staninna.yourtube.MainViewModel
 import com.staninna.yourtube.data.FeedPageSize
+import com.staninna.yourtube.data.PipMode
+import com.staninna.yourtube.playback.PipSupport
 import com.staninna.yourtube.ui.components.SubpageTopBar
 import com.staninna.yourtube.ui.theme.dynamicColorAvailable
 import kotlinx.coroutines.CancellationException
@@ -52,8 +54,9 @@ import kotlinx.coroutines.CancellationException
 /**
  * Settings, pushed over the shell. Sections follow the plan's order (Playback, Content, Feed,
  * Appearance, Library, Privacy, About); a section appears once it has a real setting, so today that
- * is Content (see `ContentSettings`), Feed, Appearance, Library and About. Back, including the predictive back gesture, shrinks the
- * screen toward the swiped edge before it leaves. Manage tags opens over it.
+ * is Playback, Content (see `ContentSettings`), Feed, Appearance, Library and About. Back, including
+ * the predictive back gesture, shrinks the screen toward the swiped edge before it leaves. Manage tags
+ * opens over it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +64,7 @@ fun SettingsScreen(vm: MainViewModel, snackbars: Snackbars, backup: BackupAction
     val settings by vm.settings.collectAsStateWithLifecycle()
     val library by vm.library.state.collectAsStateWithLifecycle()
     val diagnostics by Diagnostics.counts.collectAsStateWithLifecycle()
+    val pipSupport by vm.pip.support.collectAsStateWithLifecycle()
     var manageTags by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val webView = remember { WebViewCompat.getCurrentWebViewPackage(context) }
@@ -100,6 +104,20 @@ fun SettingsScreen(vm: MainViewModel, snackbars: Snackbars, backup: BackupAction
                 .padding(padding)
                 .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
         ) {
+            Section(
+                "Playback",
+                listOf { shapes ->
+                    ChoiceRow(
+                        "Picture-in-picture",
+                        SettingsModel.pipSummary(settings.pip, pipSupport),
+                        options = SettingsModel.pipOptions,
+                        selectedIndex = settings.pip.ordinal,
+                        onSelect = { vm.pip.setMode(PipMode.entries[it]) },
+                        shapes = shapes,
+                        enabled = pipSupport == PipSupport.AVAILABLE,
+                    )
+                },
+            )
             ContentSettings(settings, vm)
             Section(
                 "Feed",

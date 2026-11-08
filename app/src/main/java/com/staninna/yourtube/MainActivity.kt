@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { vm.pagePushes.collect(host::post) }
         app.playback.attach(page)
         lifecycleScope.launch { app.playback.state.map { it.session }.distinctUntilChanged().collect(host::keepPlaying) }
+        PictureInPicture(this, vm.pip, vm.settings, vm.playing, host, app.playback)
         backMovesTaskToBack()
 
         setContent {

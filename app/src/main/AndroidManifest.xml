@@ -19,6 +19,7 @@
             android:exported="true"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|density|fontScale|locale|layoutDirection|keyboard|keyboardHidden|navigation|uiMode"
             android:launchMode="singleTask"
+            android:supportsPictureInPicture="true"
             android:theme="@style/Theme.Tube">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

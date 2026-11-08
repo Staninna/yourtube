@@ -138,6 +138,19 @@ enum class FeedPageSize(val count: Int) {
     @SerialName("250") P250(250),
 }
 
+/** When a playing video moves into a picture-in-picture window. Stored by name. */
+@Serializable
+enum class PipMode {
+    /** On leaving the app while Watch shows the video. */
+    @SerialName("auto") AUTO,
+
+    /** On leaving the app from YouTube's fullscreen only. */
+    @SerialName("fullscreen") FULLSCREEN,
+
+    /** Only from Watch's menu; leaving the app plays the sound alone. */
+    @SerialName("manual") MANUAL,
+}
+
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class Settings(
@@ -151,4 +164,5 @@ data class Settings(
     val feedPageSize: FeedPageSize = FeedPageSize.P50,
     val adBlocking: AdBlocking = AdBlocking(),
     val sponsorBlock: SponsorBlockSettings = SponsorBlockSettings(),
+    val pip: PipMode = PipMode.AUTO,
 )

@@ -1,10 +1,10 @@
 package com.staninna.yourtube.playback
 
 /**
- * D4 without picture-in-picture: when the media session, and the foreground service that carries it,
- * starts and ends, and what back at Watch's root does. The Activity, the page and the service report
- * [Event]s; [on] answers with the next state and what to do about the session. Times are the hub's
- * clock, in ms.
+ * D4: when the media session, and the foreground service that carries it, starts and ends, and what
+ * back at Watch's root does. Whether leaving enters picture-in-picture is [PipPolicy]'s. The
+ * Activity, the page and the service report [Event]s; [on] answers with the next state and what to do
+ * about the session. Times are the hub's clock, in ms.
  *
  * - The video playing while the Activity shows starts the session. Nothing starts it while the
  *   Activity is hidden, so the service is only ever started from the foreground.
@@ -14,6 +14,9 @@ package com.staninna.yourtube.playback
  *   while the Activity is hidden. The service keeps its foreground state that long after a stop too.
  * - With no video in Watch, or the task swiped away from recents, the session ends at once, and the
  *   page is paused.
+ * - Closing the picture-in-picture window only stops the Activity (stage 0), so picture-in-picture
+ *   ending while the Activity is stopped is a close: it ends the session like a swipe from recents.
+ *   Expanding the window ends picture-in-picture while the Activity is started, and changes nothing.
  * - Back at Watch's root while the video plays moves the task to the back instead of finishing the
  *   Activity, and the WebView with it. Android 12 does that by itself only for a task started from the
  *   launcher, not one opened from the notification or a link.
@@ -27,12 +30,15 @@ data class BackgroundPlayback(
     val session: Boolean = false,
     /** When the video last stopped playing. */
     val stoppedAt: Long = 0,
+    /** The Activity shows in a picture-in-picture window. */
+    val pip: Boolean = false,
 ) {
     sealed interface Event {
         data class Visibility(val visible: Boolean) : Event
         /** [playing] is never true without a [video]. */
         data class Playback(val video: Boolean, val playing: Boolean) : Event
         data object TaskRemoved : Event
+        data class Pip(val inPip: Boolean) : Event
 
         /** Time has passed; the hub sends it at [releaseAt]. */
         data object Tick : Event
@@ -58,11 +64,14 @@ data class BackgroundPlayback(
             is Event.Visibility -> copy(visible = event.visible)
             is Event.Playback ->
                 copy(video = event.video, playing = event.playing, stoppedAt = if (playing && !event.playing) now else stoppedAt)
-            Event.TaskRemoved -> return Step(copy(session = false), Effect.RELEASE.takeIf { session })
+            Event.TaskRemoved -> return end()
+            is Event.Pip -> if (pip && !event.inPip && !visible) return end() else copy(pip = event.inPip)
             Event.Tick -> this
         }
         return next.settle(now)
     }
+
+    private fun end() = Step(copy(session = false, pip = false), Effect.RELEASE.takeIf { session })
 
     private fun settle(now: Long): Step = when {
         session && !keepsSession(now) -> Step(copy(session = false), Effect.RELEASE)

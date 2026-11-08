@@ -106,6 +106,24 @@ data class SegmentSkipped(val videoId: String, val category: SegmentCategory, va
 @SerialName("adLeak")
 data class AdLeak(val url: String) : BridgeMessage
 
+/**
+ * Where the main video shows, for picture-in-picture: the picture's size in video pixels, and its
+ * element's box in CSS pixels of a viewport [viewportWidth] CSS pixels wide (`innerWidth`, which spans
+ * the WebView; `devicePixelRatio` misses the page's own rounding). Sent with the video's reports
+ * whenever any of it changed.
+ */
+@Serializable
+@SerialName("videoBox")
+data class VideoBox(
+    val videoWidth: Int,
+    val videoHeight: Int,
+    val left: Double,
+    val top: Double,
+    val right: Double,
+    val bottom: Double,
+    val viewportWidth: Double,
+) : BridgeMessage
+
 /** Messages the app sends back to the page, with the same `type` discriminator. */
 @Serializable
 sealed interface BridgeReply

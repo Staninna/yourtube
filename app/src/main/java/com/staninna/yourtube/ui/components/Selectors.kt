@@ -83,7 +83,13 @@ fun TagDot(color: Color, modifier: Modifier = Modifier, size: Dp = 10.dp) {
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun SegmentedButtons(segments: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun SegmentedButtons(
+    segments: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
     Row(
         modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
@@ -92,6 +98,7 @@ fun SegmentedButtons(segments: List<String>, selectedIndex: Int, onSelect: (Int)
             ToggleButton(
                 checked = index == selectedIndex,
                 onCheckedChange = { onSelect(index) },
+                enabled = enabled,
                 modifier = Modifier.weight(1f).semantics { role = Role.RadioButton },
                 shapes = when (index) {
                     0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()

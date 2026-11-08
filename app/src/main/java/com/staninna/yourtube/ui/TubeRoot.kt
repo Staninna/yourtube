@@ -69,7 +69,7 @@ import kotlinx.coroutines.flow.collectLatest
 /**
  * The app shell. Watch (the WebView) is always composed at the bottom so playback never stops; the
  * native tabs lie over it with the now-playing bar, the navigation bar runs along the bottom, and
- * Settings and search cover everything when open.
+ * Settings and search cover everything when open. In picture-in-picture only Watch's page shows.
  */
 @Composable
 fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
@@ -80,6 +80,9 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     val overlayOpen = settingsOpen || searchOpen
+    val inPip by vm.pip.inPip.collectAsStateWithLifecycle()
+    val watchShown = tab == Tab.WATCH && !overlayOpen
+    LaunchedEffect(watchShown) { vm.pip.setWatchShown(watchShown) }
     val snackbars = remember { Snackbars(SnackbarHostState(), SnackbarHostState()) }
     val backup = rememberBackupActions(vm)
     val corrupt by vm.corruptNotice.collectAsStateWithLifecycle()
@@ -134,20 +137,21 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
     Box(Modifier.fillMaxSize()) {
         Scaffold(
             modifier = if (overlayOpen) Modifier.clearAndSetSemantics {} else Modifier,
-            bottomBar = { TubeNavigationBar(tab, vm::selectTab) },
+            bottomBar = { if (!inPip) TubeNavigationBar(tab, vm::selectTab) },
             // While Settings is open its own host shows the notices.
-            snackbarHost = { if (!settingsOpen) SnackbarStack(snackbars) },
+            snackbarHost = { if (!settingsOpen && !inPip) SnackbarStack(snackbars) },
             contentWindowInsets = WindowInsets(0),
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
                 WatchScreen(
                     vm, host, nav,
-                    covered = tab != Tab.WATCH || overlayOpen,
+                    covered = !watchShown,
+                    chrome = !inPip,
                     onSearch = openSearch,
                     onSettings = openSettings,
                     modifier = if (tab != Tab.WATCH) Modifier.clearAndSetSemantics {} else Modifier,
                 )
-                NativeTabs(tab, vm, nowPlaying, openSearch, openSettings, overlayOpen)
+                if (!inPip) NativeTabs(tab, vm, nowPlaying, openSearch, openSettings, overlayOpen)
             }
         }
         AnimatedVisibility(
@@ -164,7 +168,9 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
                 onDismiss = closeSearch,
             )
         }
-        TagSheetHost(vm.library)
+        // Settings and search are closed whenever picture-in-picture starts, as Watch shows then; the
+        // tag sheet is a window of its own and would cover the video.
+        if (!inPip) TagSheetHost(vm.library)
     }
 }
 

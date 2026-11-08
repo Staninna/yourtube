@@ -98,6 +98,9 @@ class MainViewModel(
     /** Feeds: subscribed channels' uploads, chips and paging. */
     val feeds = FeedsModel(store, feedFetcher, viewModelScope)
 
+    /** Picture-in-picture: mode, support, and Watch's menu entry. */
+    val pip = PipModel(store, playback, playing, viewModelScope)
+
     /** SponsorBlock segments for the page, and skips with Undo. */
     private val sponsor = SponsorModel(store, segments, viewModelScope, emit = { _events.trySend(it) })
 

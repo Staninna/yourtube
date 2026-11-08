@@ -111,13 +111,15 @@ fun ChoiceRow(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     shapes: ListItemShapes,
+    enabled: Boolean = true,
 ) {
     SegmentedListItem(
         shapes = shapes,
+        enabled = enabled,
         supportingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(summary)
-                SegmentedButtons(options, selectedIndex, onSelect, Modifier.padding(bottom = 4.dp))
+                SegmentedButtons(options, selectedIndex, onSelect, Modifier.padding(bottom = 4.dp), enabled)
             }
         },
     ) { Text(title, Modifier.semantics { heading() }) }

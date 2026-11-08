@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.net.Uri
 import android.util.Log
 import android.view.ViewGroup
@@ -83,7 +84,8 @@ class TubeWebView internal constructor(context: Context, internal val identity: 
 /**
  * Owns the WebView and everything bound to it, for exactly as long as its Activity lives: identity
  * and profile binding, settings, the message bridge, document-start scripts, the navigation policy,
- * the network layer of ad blocking, navigation state, fullscreen, and render-process recovery.
+ * the network layer of ad blocking, navigation state, fullscreen, the video's place for
+ * picture-in-picture, and render-process recovery.
  *
  * Compose renders the WebView keyed on [generation] (see `WebViewSlot`), calling [create] and
  * [release], so creation and destruction follow composition. A new identity means a new generation
@@ -103,11 +105,22 @@ class WebViewHost(
     private val _generation = MutableStateFlow<Int?>(null)
     val generation: StateFlow<Int?> = _generation.asStateFlow()
 
-    private val bridge = Bridge(listener, isCurrent = { it === webView })
+    private val _videoBox = MutableStateFlow<VideoBox?>(null)
+
+    /** Where the current page's main video last showed; null until it reported. */
+    val videoBox: StateFlow<VideoBox?> = _videoBox.asStateFlow()
+
+    /** Whether the page shows only the video; its box then is the PiP window's and says nothing. */
+    private var filling = false
+
+    private val bridge = Bridge(listener, isCurrent = { it === webView }, onVideoBox = { if (!filling) _videoBox.value = it })
     private val scripts = PageScripts(activity.assets)
     private val chrome = FullscreenChromeClient(activity, current = { webView }) { view, progress ->
         if (view === webView) _nav.update { it.copy(progress = progress) }
     }
+
+    /** Whether the page's fullscreen video covers the Activity. */
+    val fullscreen: StateFlow<Boolean> = chrome.showing
 
     private var generations = 0
     private var preparing: Job? = null
@@ -175,6 +188,22 @@ class WebViewHost(
     fun keepPlaying(on: Boolean) {
         keepPlaying = on
         webView?.keepPlaying = on
+    }
+
+    /**
+     * Shows only the video, filling the WebView, or the page again: picture-in-picture. Chromium's own
+     * fullscreen view needs none of it.
+     */
+    fun fillWithVideo(on: Boolean) {
+        filling = on
+        webView?.evaluateJavascript("window.__yourtubeFill && window.__yourtubeFill($on)", null)
+    }
+
+    /** The WebView's place in its window, in pixels; null without a WebView. */
+    fun boundsInWindow(): Rect? {
+        val view = webView ?: return null
+        val at = IntArray(2).also(view::getLocationInWindow)
+        return Rect(at[0], at[1], at[0] + view.width, at[1] + view.height)
     }
 
     /** Loads the failed URL again after a main-frame error. */
@@ -336,6 +365,7 @@ class WebViewHost(
 
     private fun forgetCurrentView() {
         webView = null
+        _videoBox.value = null
         scripts.forget()
     }
 

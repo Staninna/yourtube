@@ -37,7 +37,11 @@ interface PageListener {
  *
  * Messages from a WebView that [isCurrent] no longer accepts (one being replaced) are dropped.
  */
-internal class Bridge(private val listener: PageListener, private val isCurrent: (WebView) -> Boolean) {
+internal class Bridge(
+    private val listener: PageListener,
+    private val isCurrent: (WebView) -> Boolean,
+    private val onVideoBox: (VideoBox) -> Unit,
+) {
 
     @SuppressLint("JavascriptInterface", "AddJavascriptInterface")
     fun install(webView: WebView) {
@@ -69,6 +73,7 @@ internal class Bridge(private val listener: PageListener, private val isCurrent:
             is SegmentsRequest -> listener.requestSegments(message.videoId) { reply(BridgeMessage.encode(it)) }
             is SegmentSkipped -> listener.onSegmentSkipped(message)
             is AdLeak -> listener.onAdLeak(message.url)
+            is VideoBox -> onVideoBox(message)
         }
     }
 

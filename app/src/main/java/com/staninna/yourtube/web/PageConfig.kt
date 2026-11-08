@@ -16,11 +16,13 @@ import kotlinx.serialization.json.buildJsonObject
  * - `adSafetyNet`: whether `main.js` mutes and skips an ad that still plays.
  * - `removeShorts`: whether `main.js` sends Shorts links to the watch page.
  * - `segmentColors`: CSS colors by SponsorBlock category API name, for the progress bar marks.
+ * - `fillCss`: the stylesheet `early.js` turns on in picture-in-picture.
  */
 object PageConfig {
 
     fun of(settings: Settings): JsonObject = buildJsonObject {
         put("css", JsonPrimitive(css(settings)))
+        put("fillCss", JsonPrimitive(FILL_CSS))
         put("prune", if (settings.adBlocking.isOn(AdLayer.PLAYER)) PlayerAdPrune.json else JsonNull)
         put("adSafetyNet", JsonPrimitive(settings.adBlocking.isOn(AdLayer.SAFETY_NET)))
         put("removeShorts", JsonPrimitive(settings.removeShorts))
@@ -60,6 +62,25 @@ object PageConfig {
         "@media (orientation:landscape) and (min-width:931px){ytm-engagement-panel:not(.is-shorts-style)" +
             "{top:0 !important}}",
         ".mweb-phone-metadata-split-view ytm-engagement-panel:not(.is-shorts-style){top:0 !important}",
+    ).joinToString("\n")
+
+    /**
+     * Picture-in-picture: the video alone, filling the window on black. Sized by `inset:0`, not `vh`.
+     * `#movie_player` has `z-index:0`, which caps the video under the page, so the player is raised
+     * instead; YouTube's drawer peeks into a window this small, so it goes with the header (stage 0).
+     */
+    internal val FILL_CSS = listOf(
+        "html,body{overflow:hidden !important;background:#000 !important}",
+        ".player-container,#player-container-id,#player,#movie_player,#movie_player .html5-video-container" +
+            "{position:fixed !important;inset:0 !important;width:100% !important;height:100% !important;" +
+            "margin:0 !important;padding:0 !important;transform:none !important;z-index:2147483647 !important;" +
+            "background:#000 !important}",
+        "#movie_player video{position:fixed !important;inset:0 !important;" +
+            "width:100% !important;height:100% !important;object-fit:contain !important;transform:none !important}",
+        "#movie_player .player-controls-content,#movie_player .player-controls-background," +
+            "#movie_player .ytp-unmute,#movie_player .ytm-autonav-bar,#movie_player .ytp-ad-overlay-container" +
+            "{display:none !important}",
+        ".ytmDrawerLayoutContainerDrawerLayout,ytm-mobile-topbar-renderer,#header-bar{display:none !important}",
     ).joinToString("\n")
 
     /** Sign-in prompts, Premium and app-install promos: nothing a signed-out viewer can act on. */

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
@@ -64,6 +65,7 @@ fun watchBarColor(page: PageIdentity): Color =
  * The Watch tab: YouTube in the WebView under a top bar colored like YouTube's own header, so the two
  * read as one surface. The bar has no title; it carries back, star, search, Home and the overflow.
  * A thin line shows load progress, and a failed main-frame load shows a native error with Retry.
+ * Without [chrome] (picture-in-picture) only the WebView shows.
  */
 @Composable
 fun WatchScreen(
@@ -71,17 +73,18 @@ fun WatchScreen(
     host: WebViewHost,
     nav: NavState,
     covered: Boolean,
+    chrome: Boolean,
     onSearch: () -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val page by vm.page.collectAsStateWithLifecycle()
     Column(modifier.fillMaxSize()) {
-        WatchTopBar(vm, host, nav, page, onSearch, onSettings)
+        if (chrome) WatchTopBar(vm, host, nav, page, onSearch, onSettings)
         Box(Modifier.weight(1f).fillMaxWidth()) {
             // The error state covers the page too, so TalkBack skips it then.
             WebViewSlot(host, Modifier.fillMaxSize(), covered = covered || nav.error != null)
-            LoadProgress(nav, Modifier.align(Alignment.TopCenter))
+            if (chrome) LoadProgress(nav, Modifier.align(Alignment.TopCenter))
             nav.error?.let { LoadErrorState(it, onRetry = host::retry) }
         }
     }
@@ -98,6 +101,7 @@ private fun WatchTopBar(
     onSettings: () -> Unit,
 ) {
     val context = LocalContext.current
+    val offersPip by vm.pip.offersEntry.collectAsStateWithLifecycle()
     val container by animateColorAsState(watchBarColor(page), MaterialTheme.motionScheme.defaultEffectsSpec(), label = "bar")
     val content = if (container.luminance() < 0.5f) Color.White else Color(YouTube.PAGE_DARK)
     TopAppBar(
@@ -112,6 +116,7 @@ private fun WatchTopBar(
             OverflowMenu(
                 listOfNotNull(
                     nav.url?.let { url -> MenuEntry("Share", Icons.Filled.Share) { share(context, url, page.title) } },
+                    MenuEntry("Picture-in-picture", Icons.Filled.PictureInPictureAlt, vm.pip::enter).takeIf { offersPip },
                     MenuEntry("Settings", Icons.Filled.Settings, onSettings),
                 ),
             )

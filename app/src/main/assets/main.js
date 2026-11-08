@@ -1,7 +1,8 @@
 // YourTube main script. Runs in the main frame once the DOM is ready. It reports raw facts to the
 // app through window.TubeBridge and never decides what a page is; that happens in Kotlin.
-// Messages out (JSON): page, playback, resume, segments, skipped, adLeak. Messages in: resume,
-// segments, undoSkip, and the media session's play, pause and seek. See BridgeMessage.kt. Settings come from early.js (window.__yourtubeConfig).
+// Messages out (JSON): page, playback, videoBox, resume, segments, skipped, adLeak. Messages in:
+// resume, segments, undoSkip, and the media session's play, pause and seek. See BridgeMessage.kt.
+// Settings come from early.js (window.__yourtubeConfig).
 // No timers: navigation comes from the history hook, popstate and state-navigateend, playback from
 // media events captured on the document.
 (function () {
@@ -166,6 +167,23 @@
         type: 'playback', kind: KINDS[e.type], videoId: id, paused: video.paused, rate: main.rate,
         position: main.position, duration: main.duration,
       })
+      reportBox(video)
+    }
+
+    // The video's picture size and on-screen box, for picture-in-picture's shape and enter animation.
+    // Riding on the playback reports keeps it current while it plays, at most once a second.
+    var lastBox = ''
+    function reportBox(video) {
+      var r = video.getBoundingClientRect()
+      if (!video.videoWidth || !video.videoHeight || r.width <= 0 || r.height <= 0) return
+      var box = {
+        type: 'videoBox', videoWidth: video.videoWidth, videoHeight: video.videoHeight,
+        left: r.left, top: r.top, right: r.right, bottom: r.bottom, viewportWidth: window.innerWidth,
+      }
+      var text = JSON.stringify(box)
+      if (text === lastBox) return
+      lastBox = text
+      post(box)
     }
     Object.keys(KINDS).forEach(function (type) { document.addEventListener(type, onMedia, true) })
 

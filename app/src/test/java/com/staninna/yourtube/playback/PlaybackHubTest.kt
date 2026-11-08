@@ -108,4 +108,22 @@ class PlaybackHubTest {
         assertFalse(f.hub.state.value.session)
         assertEquals(listOf<PlayerCommand>(PlayerCommand.Pause), f.sent)
     }
+
+    @Test fun closingPipPausesThePageAndADetachLeavesNoPipBehind() = runTest {
+        val f = Fixture(this)
+        f.hub.attach(f.page)
+        f.hub.setVisible(true)
+        f.hub.publish(nowPlaying(Status.PLAYING))
+        f.hub.setPip(true)
+        f.hub.setVisible(false)
+        f.hub.setPip(false)
+        assertFalse(f.hub.state.value.session)
+        assertEquals(listOf<PlayerCommand>(PlayerCommand.Pause), f.sent)
+
+        f.hub.setVisible(true)
+        f.hub.publish(nowPlaying(Status.PLAYING))
+        f.hub.setPip(true)
+        f.hub.detach(f.page)
+        assertFalse(f.hub.state.value.pip)
+    }
 }

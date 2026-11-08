@@ -108,7 +108,7 @@ class ContentFlowsTest {
         openSettings()
         row("Segments").performScrollTo().assertIsEnabled()
         compose.onNodeWithText("Skips sponsor and self-promotion. Marks 6 categories.").assertIsDisplayed()
-        compose.onNodeWithText("sponsor.ajay.app (default)").assertIsDisplayed()
+        compose.onNodeWithText("sponsor.ajay.app (default)").performScrollTo().assertIsDisplayed()
         switch("Use SponsorBlock").performScrollTo().assertIsOn().performClick()
         compose.waitUntil(5_000) { !store.settings.value.sponsorBlock.enabled }
         compose.onNode(hasText("Segments")).assertIsNotEnabled()

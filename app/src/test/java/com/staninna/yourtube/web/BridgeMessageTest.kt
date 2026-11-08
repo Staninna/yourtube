@@ -112,4 +112,13 @@ class BridgeMessageTest {
         assertEquals("""{"type":"pause"}""", BridgeMessage.encode(PlayerCommand.Pause))
         assertEquals("""{"type":"seek","videoId":"v","position":95.5}""", BridgeMessage.encode(PlayerCommand.Seek("v", 95.5)))
     }
+
+    // --- picture-in-picture ---
+
+    @Test fun decodesAVideoBox() {
+        val message = BridgeMessage.decode(
+            """{"type":"videoBox","videoWidth":854,"videoHeight":480,"left":0,"top":0,"right":412,"bottom":231.75,"viewportWidth":412}""",
+        )
+        assertEquals(VideoBox(854, 480, 0.0, 0.0, 412.0, 231.75, 412.0), message)
+    }
 }

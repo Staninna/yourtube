@@ -12,6 +12,9 @@ import androidx.activity.OnBackPressedCallback
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Shows the page's fullscreen video over the Activity: system bars hidden until swiped in, the screen
@@ -34,6 +37,10 @@ internal class FullscreenChromeClient(
     private var orientationBefore = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private val content: ViewGroup get() = activity.findViewById(android.R.id.content)
     private val bars: WindowInsetsControllerCompat get() = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+    private val _showing = MutableStateFlow(false)
+
+    /** Whether the page's fullscreen video covers the Activity. */
+    val showing: StateFlow<Boolean> = _showing.asStateFlow()
 
     override fun onProgressChanged(view: WebView, newProgress: Int) = onProgress(view, newProgress)
 
@@ -44,6 +51,7 @@ internal class FullscreenChromeClient(
         }
         customView = view
         customViewCallback = callback
+        _showing.value = true
         view.alpha = 0f
         val backdrop = FrameLayout(activity).apply {
             setBackgroundColor(Color.BLACK)
@@ -85,6 +93,7 @@ internal class FullscreenChromeClient(
         }
         backdrop = null
         customView = null
+        _showing.value = false
         customViewCallback?.onCustomViewHidden()
         customViewCallback = null
         backCallback?.remove()

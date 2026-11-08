@@ -1,5 +1,7 @@
 package com.staninna.yourtube.ui
 
+import com.staninna.yourtube.playback.PipSupport
+import com.staninna.yourtube.data.PipMode
 import com.staninna.yourtube.data.HistoryEntry
 import com.staninna.yourtube.data.PlaybackKind
 import com.staninna.yourtube.data.Settings
@@ -124,5 +126,16 @@ class ShellModelTest {
         val rows = SettingsModel.diagnostics(mapOf("b.event" to 2, "a.event" to 2, "c.event" to 5))
         assertEquals(listOf("c.event" to 5, "a.event" to 2, "b.event" to 2), rows)
         assertTrue(SettingsModel.diagnostics(emptyMap()).isEmpty())
+    }
+
+    @Test fun pipSummarySaysWhatTheModeDoesOrWhyItIsLocked() {
+        assertEquals("A playing video moves to a small window when you leave the app", SettingsModel.pipSummary(PipMode.AUTO, PipSupport.AVAILABLE))
+        assertTrue(SettingsModel.pipSummary(PipMode.FULLSCREEN, PipSupport.AVAILABLE).startsWith("Only from fullscreen"))
+        assertTrue(SettingsModel.pipSummary(PipMode.MANUAL, PipSupport.AVAILABLE).startsWith("Watch's menu"))
+        for (mode in PipMode.entries) {
+            assertEquals("This device has no picture-in-picture", SettingsModel.pipSummary(mode, PipSupport.NO_FEATURE))
+            assertEquals("Turned off for YourTube in Android's settings", SettingsModel.pipSummary(mode, PipSupport.TURNED_OFF))
+        }
+        assertEquals(PipMode.entries.size, SettingsModel.pipOptions.size)
     }
 }

@@ -81,4 +81,13 @@ class PageConfigTest {
             "https://example.com/youtubei/v1/player",
         )) assertFalse(url, urls.containsMatchIn(url))
     }
+
+    @Test fun theFillStylesheetGoesToThePageAndSizesWithoutVh() {
+        assertEquals(JsonPrimitive(PageConfig.FILL_CSS), PageConfig.of(Settings())["fillCss"])
+        assertTrue(PageConfig.FILL_CSS.contains("#movie_player video{position:fixed !important;inset:0 !important"))
+        assertTrue(PageConfig.FILL_CSS.contains(".ytmDrawerLayoutContainerDrawerLayout"))
+        assertFalse(PageConfig.FILL_CSS.contains("vh"))
+        // Only in picture-in-picture: never part of the always-on stylesheet.
+        assertFalse(PageConfig.css(Settings()).contains("object-fit"))
+    }
 }

@@ -1,6 +1,8 @@
 package com.staninna.yourtube.ui
 
+import com.staninna.yourtube.data.PipMode
 import com.staninna.yourtube.data.Settings
+import com.staninna.yourtube.playback.PipSupport
 
 /** A switch as Settings shows it. */
 data class SwitchState(val checked: Boolean, val enabled: Boolean)
@@ -9,6 +11,20 @@ data class SwitchState(val checked: Boolean, val enabled: Boolean)
 object SettingsModel {
     /** Dynamic color shows as off and locked on a device without it, whatever is stored. */
     fun dynamicColor(settings: Settings, available: Boolean) = SwitchState(settings.dynamicColor && available, available)
+
+    /** Picture-in-picture's choices, in [PipMode] order; the summary spells out the short ones. */
+    val pipOptions = listOf("Automatic", "Fullscreen", "Manual")
+
+    /** The picture-in-picture row's summary: what the chosen mode does, or why there is no choice. */
+    fun pipSummary(mode: PipMode, support: PipSupport): String = when (support) {
+        PipSupport.NO_FEATURE -> "This device has no picture-in-picture"
+        PipSupport.TURNED_OFF -> "Turned off for YourTube in Android's settings"
+        PipSupport.AVAILABLE -> when (mode) {
+            PipMode.AUTO -> "A playing video moves to a small window when you leave the app"
+            PipMode.FULLSCREEN -> "Only from fullscreen: a video playing fullscreen moves to a small window when you leave the app"
+            PipMode.MANUAL -> "Watch's menu has it while a video plays. Leaving the app plays the sound alone."
+        }
+    }
 
     /** The Manage tags row's summary. */
     fun tagCount(count: Int): String = if (count == 0) "No tags yet" else plural(count, "tag", "tags")
