@@ -5,4 +5,7 @@
     the window cannot read, and both surfaces sit within a tone of this gray.
     -->
     <color name="window_background">#FFF9F9F9</color>
+
+    <!-- The launcher icon's background, behind the purple play button. -->
+    <color name="ic_launcher_background">#FFFFFFFF</color>
 </resources>
