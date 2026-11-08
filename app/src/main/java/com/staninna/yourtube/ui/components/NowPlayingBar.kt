@@ -11,7 +11,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -34,15 +39,16 @@ import coil.compose.AsyncImage
 import com.staninna.yourtube.page.NowPlaying
 
 /**
- * The video loaded in Watch, shown above the navigation bar on the native tabs: still, title and
- * channel; tapping it returns to Watch. The progress line waves while the video plays and lies flat
- * when it is paused.
+ * The video loaded in Watch, shown above the navigation bar on the native tabs: still, title, channel
+ * and a play/pause button; tapping the rest returns to Watch. The progress line waves while the video
+ * plays and lies flat when it is paused.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun NowPlayingBar(
     nowPlaying: NowPlaying,
     onOpen: () -> Unit,
+    onPlayPause: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val title = nowPlaying.title ?: "Video"
@@ -87,6 +93,9 @@ fun NowPlayingBar(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                }
+                FilledTonalIconButton(onClick = onPlayPause) {
+                    if (nowPlaying.playing) Icon(Icons.Filled.Pause, "Pause") else Icon(Icons.Filled.PlayArrow, "Play")
                 }
             }
             ProgressLine(nowPlaying)

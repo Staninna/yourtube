@@ -57,6 +57,13 @@ class BridgeMessageTest {
         assertEquals(PlaybackEvent(PlaybackKind.TIME, "v", 40.0, 300.0, paused = true), BridgeMessage.decode(seekWhilePaused))
     }
 
+    @Test fun playbackCarriesTheRate() {
+        val faster = """{"type":"playback","kind":"time","videoId":"v","paused":false,"rate":1.5,"position":40,"duration":300}"""
+        assertEquals(1.5, (BridgeMessage.decode(faster) as PlaybackEvent).rate, 0.0)
+        val older = """{"type":"playback","kind":"time","videoId":"v","position":40,"duration":300}"""
+        assertEquals("a page script without the field plays at normal speed", 1.0, (BridgeMessage.decode(older) as PlaybackEvent).rate, 0.0)
+    }
+
     @Test fun playbackWithoutPausedReadsItFromTheKind() {
         val decode = { kind: String -> (BridgeMessage.decode("""{"type":"playback","kind":"$kind","videoId":"v","position":1,"duration":2}""") as PlaybackEvent).paused }
         assertEquals(listOf(false, true, true, false), listOf("play", "pause", "ended", "time").map(decode))
@@ -96,5 +103,13 @@ class BridgeMessageTest {
             BridgeMessage.encode(SegmentsReply("v", listOf(PageSegment(10.0, 20.0, SegmentCategory.SPONSOR, SegmentAction.SKIP)))),
         )
         assertEquals("""{"type":"undoSkip","videoId":"v","start":10.0}""", BridgeMessage.encode(UndoSkip("v", 10.0)))
+    }
+
+    // --- media session ---
+
+    @Test fun encodesPlayerCommands() {
+        assertEquals("""{"type":"play"}""", BridgeMessage.encode(PlayerCommand.Play))
+        assertEquals("""{"type":"pause"}""", BridgeMessage.encode(PlayerCommand.Pause))
+        assertEquals("""{"type":"seek","videoId":"v","position":95.5}""", BridgeMessage.encode(PlayerCommand.Seek("v", 95.5)))
     }
 }

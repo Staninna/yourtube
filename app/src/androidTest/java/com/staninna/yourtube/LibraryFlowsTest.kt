@@ -67,6 +67,7 @@ class LibraryFlowsTest {
             ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)),
             FeedFetcher { ChannelFetch.Ok(emptyList(), FeedSource.RSS) },
             SegmentSource { _, _ -> emptyList() },
+            testHub(),
         )
         lateinit var host: WebViewHost
         compose.runOnUiThread { host = WebViewHost(compose.activity, store.settings, vm, onRestartNeeded = {}) }

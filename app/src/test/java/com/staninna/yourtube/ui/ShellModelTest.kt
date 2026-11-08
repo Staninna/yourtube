@@ -1,12 +1,14 @@
 package com.staninna.yourtube.ui
 
 import com.staninna.yourtube.data.HistoryEntry
+import com.staninna.yourtube.data.PlaybackKind
 import com.staninna.yourtube.data.Settings
 import com.staninna.yourtube.data.VideoMeta
 import com.staninna.yourtube.data.WatchProgress
 import com.staninna.yourtube.page.NowPlaying
 import com.staninna.yourtube.page.PageIdentity
 import com.staninna.yourtube.ui.components.Placeholder
+import com.staninna.yourtube.web.PlaybackEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -20,27 +22,48 @@ class ShellModelTest {
 
     // --- now playing ---
 
+    private fun event(kind: PlaybackKind, paused: Boolean, videoId: String = "VID") =
+        PlaybackEvent(kind, videoId, position = 60.0, duration = 120.0, paused = paused, rate = 1.25)
+
     @Test fun nowPlayingNeedsAVideoInWatch() {
-        assertNull(NowPlaying.of(PageIdentity.Other, emptyList(), playing = true))
-        assertNull(NowPlaying.of(PageIdentity.Channel("/@x", null, "X"), emptyList(), playing = false))
+        assertNull(NowPlaying.of(PageIdentity.Other, emptyList(), event(PlaybackKind.PLAY, paused = false)))
+        assertNull(NowPlaying.of(PageIdentity.Channel("/@x", null, "X"), emptyList(), null))
     }
 
     @Test fun nowPlayingPrefersThePageAndFallsBackToHistory() {
-        val fromPage = NowPlaying.of(PageIdentity.Video("VID", meta), emptyList(), playing = true)!!
+        val fromPage = NowPlaying.of(PageIdentity.Video("VID", meta), emptyList(), event(PlaybackKind.PLAY, paused = false))!!
         assertEquals("A title", fromPage.title)
-        assertNull(fromPage.progress)
+        assertEquals(0.5f, fromPage.progress!!, 0f)
         assertTrue(fromPage.playing)
+        assertEquals(1.25, fromPage.rate, 0.0)
         assertEquals("https://i.ytimg.com/vi/VID/hqdefault.jpg", fromPage.thumbnail)
 
         val history = listOf(HistoryEntry("VID", meta, position = 30.0, duration = 120.0, watchedAt = 1))
-        val fromHistory = NowPlaying.of(PageIdentity.Video("VID", null), history, playing = false)!!
+        val fromHistory = NowPlaying.of(PageIdentity.Video("VID", null), history, null)!!
         assertEquals("A title", fromHistory.title)
         assertEquals("A channel", fromHistory.author)
         assertEquals(0.25f, fromHistory.progress!!, 0f)
+        assertEquals("before the page reports, it counts as paused", NowPlaying.Status.PAUSED, fromHistory.status)
 
-        val unknown = NowPlaying.of(PageIdentity.Video("NEW", null), history, playing = false)!!
+        val unknown = NowPlaying.of(PageIdentity.Video("NEW", null), history, null)!!
         assertNull(unknown.title)
         assertNull(unknown.progress)
+    }
+
+    @Test fun nowPlayingTakesOnlyItsOwnVideosEvent() {
+        val history = listOf(HistoryEntry("VID", meta, position = 30.0, duration = 120.0, watchedAt = 1))
+        val other = NowPlaying.of(PageIdentity.Video("VID", null), history, event(PlaybackKind.PLAY, paused = false, videoId = "OLD"))!!
+        assertEquals(NowPlaying.Status.PAUSED, other.status)
+        assertEquals(30.0, other.position, 0.0)
+        assertEquals(1.0, other.rate, 0.0)
+    }
+
+    @Test fun nowPlayingStatusFollowsTheEvent() {
+        val status = { kind: PlaybackKind, paused: Boolean -> NowPlaying.of(PageIdentity.Video("VID", meta), emptyList(), event(kind, paused))!!.status }
+        assertEquals(NowPlaying.Status.PLAYING, status(PlaybackKind.TIME, false))
+        assertEquals(NowPlaying.Status.PAUSED, status(PlaybackKind.TIME, true))
+        assertEquals(NowPlaying.Status.PAUSED, status(PlaybackKind.METADATA, true))
+        assertEquals("ended, whatever paused says", NowPlaying.Status.ENDED, status(PlaybackKind.ENDED, false))
     }
 
     // --- watch progress ---

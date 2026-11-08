@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.staninna.yourtube.data.AdLayer
 import com.staninna.yourtube.data.Library
-import com.staninna.yourtube.data.PlaybackKind
 import com.staninna.yourtube.data.SegmentAction
 import com.staninna.yourtube.data.SegmentCategory
 import com.staninna.yourtube.data.ServerInput
@@ -17,11 +16,13 @@ import com.staninna.yourtube.page.ChannelResolver
 import com.staninna.yourtube.page.NowPlaying
 import com.staninna.yourtube.page.PageIdentity
 import com.staninna.yourtube.page.starItem
+import com.staninna.yourtube.playback.PlaybackHub
 import com.staninna.yourtube.sponsor.SegmentSource
 import com.staninna.yourtube.web.BridgeReply
 import com.staninna.yourtube.web.PageListener
 import com.staninna.yourtube.web.PageReport
 import com.staninna.yourtube.web.PlaybackEvent
+import com.staninna.yourtube.web.PlayerCommand
 import com.staninna.yourtube.web.SegmentSkipped
 import com.staninna.yourtube.web.SegmentsReply
 import kotlinx.coroutines.channels.Channel
@@ -46,6 +47,7 @@ class MainViewModel(
     private val channels: ChannelResolver,
     feedFetcher: FeedFetcher,
     segments: SegmentSource,
+    private val playback: PlaybackHub,
 ) : ViewModel(), PageListener {
 
     val history = store.history
@@ -70,12 +72,15 @@ class MainViewModel(
         starItem(page, (page as? PageIdentity.Channel)?.let { cache[it.path]?.info })
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    private val _playing = MutableStateFlow(false)
-    val playing: StateFlow<Boolean> = _playing.asStateFlow()
+    /** The page's last playback event, while the URL still shows its video. */
+    private val lastPlayback = MutableStateFlow<PlaybackEvent?>(null)
 
-    /** The video loaded in Watch, for the now-playing bar on the native tabs. */
-    val nowPlaying: StateFlow<NowPlaying?> = combine(page, store.history, playing, NowPlaying::of)
+    /** The video loaded in Watch, for the now-playing bar on the native tabs and the media session. */
+    val nowPlaying: StateFlow<NowPlaying?> = combine(page, store.history, lastPlayback, NowPlaying::of)
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val playing: StateFlow<Boolean> = nowPlaying.map { it?.playing == true }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /** Watch progress per video id, for the bars under thumbnails. */
     val progress: StateFlow<Map<String, WatchProgress>> = store.history
@@ -108,6 +113,7 @@ class MainViewModel(
     val openRequests: Flow<String> = opens.receiveAsFlow()
 
     init {
+        viewModelScope.launch { nowPlaying.collect(playback::publish) }
         // A video can start playing before the player confirms its title; fill it in once it does.
         viewModelScope.launch {
             page.collect { (it as? PageIdentity.Video)?.meta?.let(store::annotateHistory) }
@@ -141,8 +147,9 @@ class MainViewModel(
 
     override fun onNavigated(url: String) {
         currentUrl.value = url
-        // Leaving a video takes its player down without a pause event; the next video reports its own play.
-        if (PageIdentity.fromUrl(url) !is PageIdentity.Video) _playing.value = false
+        // Leaving a video takes its player down without a pause event; the next video reports its own.
+        val videoId = (PageIdentity.fromUrl(url) as? PageIdentity.Video)?.videoId
+        if (lastPlayback.value?.videoId != videoId) lastPlayback.value = null
     }
 
     override fun onPageReport(report: PageReport) {
@@ -153,11 +160,7 @@ class MainViewModel(
     }
 
     override fun onPlayback(event: PlaybackEvent) {
-        when (event.kind) {
-            PlaybackKind.PLAY, PlaybackKind.PAUSE, PlaybackKind.ENDED, PlaybackKind.TIME ->
-                _playing.value = !event.paused && event.kind != PlaybackKind.ENDED
-            PlaybackKind.METADATA -> Unit
-        }
+        lastPlayback.value = event
         val meta = (page.value as? PageIdentity.Video)?.meta?.takeIf { it.videoId == event.videoId }
         store.recordPlayback(event.kind, event.videoId, event.position, event.duration, meta)
     }
@@ -169,6 +172,9 @@ class MainViewModel(
     override fun onSegmentSkipped(skip: SegmentSkipped) = sponsor.onSkipped(skip)
 
     override fun onAdLeak(url: String) = Diagnostics.count("ad.leak", url)
+
+    /** Plays or pauses the video in Watch, the way the media session does. */
+    fun playPause() = playback.send(if (playing.value) PlayerCommand.Pause else PlayerCommand.Play)
 
     // --- history ---
 

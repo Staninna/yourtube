@@ -57,7 +57,28 @@ data class LoadError(val url: String, val description: String, val offline: Bool
 }
 
 /** The app's WebView: it carries the identity it was bound to, so its release can clear it. */
-class TubeWebView internal constructor(context: Context, internal val identity: Identity) : WebView(context)
+class TubeWebView internal constructor(context: Context, internal val identity: Identity) : WebView(context) {
+    private var windowVisibility = VISIBLE
+
+    /**
+     * While true, the WebView tells Chromium its window is visible whatever it really is. Chromium
+     * pauses media once the window turns invisible (Home, screen off; stage 0), so this is what lets a
+     * video play on in the background.
+     */
+    internal var keepPlaying = false
+        set(value) {
+            if (field == value) return
+            field = value
+            super.onWindowVisibilityChanged(reportedVisibility())
+        }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        windowVisibility = visibility
+        super.onWindowVisibilityChanged(reportedVisibility())
+    }
+
+    private fun reportedVisibility() = if (keepPlaying) VISIBLE else windowVisibility
+}
 
 /**
  * Owns the WebView and everything bound to it, for exactly as long as its Activity lives: identity
@@ -84,7 +105,7 @@ class WebViewHost(
 
     private val bridge = Bridge(listener, isCurrent = { it === webView })
     private val scripts = PageScripts(activity.assets)
-    private val chrome = FullscreenChromeClient(activity) { view, progress ->
+    private val chrome = FullscreenChromeClient(activity, current = { webView }) { view, progress ->
         if (view === webView) _nav.update { it.copy(progress = progress) }
     }
 
@@ -101,6 +122,8 @@ class WebViewHost(
     /** The theme the current identity's `PREF` cookie carries: seeded, then kept in step by [syncTheme]. */
     private var syncedDark = false
 
+    private var keepPlaying = false
+
     /** Creates the WebView for the current generation. Only the Compose factory calls this. */
     fun create(context: Context): TubeWebView {
         val identity = checkNotNull(identity) { "create() needs a ready identity" }
@@ -111,6 +134,7 @@ class WebViewHost(
         // player and misplaced panels).
         view.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         configure(view)
+        view.keepPlaying = keepPlaying
         webView = view
         // The theme may have changed while this identity was being prepared.
         syncTheme(view, playing = false)
@@ -145,6 +169,12 @@ class WebViewHost(
 
     fun goBack() {
         webView?.goBack()
+    }
+
+    /** Lets the page play on while the app is in the background, or not; see [TubeWebView.keepPlaying]. */
+    fun keepPlaying(on: Boolean) {
+        keepPlaying = on
+        webView?.keepPlaying = on
     }
 
     /** Loads the failed URL again after a main-frame error. */

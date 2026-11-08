@@ -205,7 +205,7 @@ private fun NativeTabs(
                     enter = expandVertically() + fadeIn(),
                     exit = shrinkVertically() + fadeOut(),
                 ) {
-                    nowPlaying?.let { NowPlayingBar(it, onOpen = { vm.selectTab(Tab.WATCH) }) }
+                    nowPlaying?.let { NowPlayingBar(it, onOpen = { vm.selectTab(Tab.WATCH) }, onPlayPause = vm::playPause) }
                 }
             }
         }

@@ -1,7 +1,7 @@
 // YourTube main script. Runs in the main frame once the DOM is ready. It reports raw facts to the
 // app through window.TubeBridge and never decides what a page is; that happens in Kotlin.
 // Messages out (JSON): page, playback, resume, segments, skipped, adLeak. Messages in: resume,
-// segments, undoSkip. See BridgeMessage.kt. Settings come from early.js (window.__yourtubeConfig).
+// segments, undoSkip, and the media session's play, pause and seek. See BridgeMessage.kt. Settings come from early.js (window.__yourtubeConfig).
 // No timers: navigation comes from the history hook, popstate and state-navigateend, playback from
 // media events captured on the document.
 (function () {
@@ -25,6 +25,7 @@
       if (message.type === 'resume') applyResume(message)
       else if (message.type === 'segments') setSegments(message)
       else if (message.type === 'undoSkip') undoSkip(message)
+      else if (message.type === 'play' || message.type === 'pause' || message.type === 'seek') control(message)
     }
     if (bridge.addEventListener) bridge.addEventListener('message', function (e) { receive(e.data) })
     Object.defineProperty(window, '__yourtubeReceive', { value: receive })
@@ -105,7 +106,12 @@
     window.addEventListener('state-navigateend', onNavigate)
 
     // --- playback ---
-    var KINDS = { play: 'play', pause: 'pause', ended: 'ended', timeupdate: 'time', loadedmetadata: 'metadata' }
+    // A seek or a speed change reports at once, outside timeupdate's one per second: the media session
+    // sets its position and speed from them.
+    var KINDS = {
+      play: 'play', pause: 'pause', ended: 'ended', timeupdate: 'time', seeked: 'time', ratechange: 'time',
+      loadedmetadata: 'metadata',
+    }
     var lastTimeReport = 0
 
     function finite(x) { return isFinite(x) && x > 0 ? x : 0 }
@@ -129,10 +135,17 @@
     function onMedia(e) {
       var video = e.target
       if (!(video instanceof HTMLVideoElement)) return
-      if (isAd()) { onAd(video); return }
+      if (isAd()) {
+        onAd(video)
+        adPlayPause(e.type, video)
+        return
+      }
       afterAd(video)
       var id = currentVideoId()
       if (!id) return
+      // YouTube sets the speed while a video loads: a report then would store position 0 before the
+      // resume request goes out.
+      if ((e.type === 'ratechange' || e.type === 'seeked') && video.readyState < HTMLMediaElement.HAVE_METADATA) return
       if (e.type === 'timeupdate') {
         applySegments(video, id)
         var now = Date.now()
@@ -148,12 +161,36 @@
         askSegments(video, id)
         report('metadata')
       }
+      main = { videoId: id, rate: video.playbackRate, position: finite(video.currentTime), duration: finite(video.duration) }
       post({
-        type: 'playback', kind: KINDS[e.type], videoId: id, paused: video.paused,
-        position: finite(video.currentTime), duration: finite(video.duration),
+        type: 'playback', kind: KINDS[e.type], videoId: id, paused: video.paused, rate: main.rate,
+        position: main.position, duration: main.duration,
       })
     }
     Object.keys(KINDS).forEach(function (type) { document.addEventListener(type, onMedia, true) })
+
+    // The main video's last report. A play or pause while an ad shows still goes to the app, or the media
+    // session would take the pause back; it carries these numbers, so the store never records the ad's.
+    // Before the main video's first report (a pre-roll) there is nothing safe to send.
+    var main = null
+    function adPlayPause(type, video) {
+      if ((type !== 'play' && type !== 'pause') || !main || main.videoId !== currentVideoId()) return
+      post({
+        type: 'playback', kind: type, videoId: main.videoId, paused: video.paused, rate: main.rate,
+        position: main.position, duration: main.duration,
+      })
+    }
+
+    // The media session's commands (notification, lock screen, headset, the now-playing bar). They act on
+    // whatever the player shows, an ad included, except a seek, which only means the video it names.
+    function control(message) {
+      var p = player()
+      var video = p && p.querySelector('video')
+      if (!video) return
+      if (message.type === 'play') video.play().catch(function () {})
+      else if (message.type === 'pause') video.pause()
+      else if (message.videoId === currentVideoId() && !isAd()) video.currentTime = message.position
+    }
 
     // The video element whose loadedmetadata asked for a resume position, and for which video.
     var resumeTarget = null

@@ -82,6 +82,8 @@ data class PlaybackEvent(
      * read pause and end as paused and everything else as playing.
      */
     val paused: Boolean = kind == PlaybackKind.PAUSE || kind == PlaybackKind.ENDED,
+    /** The video element's `playbackRate`. */
+    val rate: Double = 1.0,
 ) : BridgeMessage
 
 /** The page asks where [videoId] should start. Answered with a [ResumeReply]. */
@@ -130,3 +132,20 @@ data class PageSegment(val start: Double, val end: Double, val category: Segment
 @Serializable
 @SerialName("undoSkip")
 data class UndoSkip(val videoId: String, val start: Double) : BridgeReply
+
+/** What the media session asks of the page's main video. */
+@Serializable
+sealed interface PlayerCommand : BridgeReply {
+    @Serializable
+    @SerialName("play")
+    data object Play : PlayerCommand
+
+    @Serializable
+    @SerialName("pause")
+    data object Pause : PlayerCommand
+
+    /** Seeks [videoId] to [position] seconds; a page that has moved on to another video ignores it. */
+    @Serializable
+    @SerialName("seek")
+    data class Seek(val videoId: String, val position: Double) : PlayerCommand
+}

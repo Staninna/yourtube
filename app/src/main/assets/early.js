@@ -1,8 +1,9 @@
 // YourTube early script. Runs at document start in every YouTube frame, before page scripts.
-// It touches no DOM elements (there are none yet): the app CSS goes in as an adopted stylesheet, the
-// background guard only redefines document properties, and the player-ads layer wraps JSON.parse,
-// fetch and XHR. Native replaces the config literal at the bottom with the current settings (see
-// PageConfig.kt); running the script again swaps the config in place, and main.js reads it from here.
+// It touches no DOM elements (there are none yet): the app CSS goes in as an adopted stylesheet, and
+// the player-ads layer wraps JSON.parse, fetch and XHR. Background playback needs nothing here: the
+// WebView reports a visible window while it may play (TubeWebView). Native replaces the config literal
+// at the bottom with the current settings (see PageConfig.kt); running the script again swaps the
+// config in place, and main.js reads it from here.
 (function (config) {
   'use strict'
   var KEY = '__yourtubeEarly'
@@ -18,17 +19,6 @@
   document.adoptedStyleSheets = document.adoptedStyleSheets.concat([sheet])
   Object.defineProperty(window, KEY, { value: apply })
   Object.defineProperty(window, '__yourtubeConfig', { get: function () { return current } })
-
-  // Background guard: YouTube pauses or degrades playback when it thinks the page is hidden.
-  try {
-    Object.defineProperty(document, 'hidden', { get: function () { return false }, configurable: true })
-    Object.defineProperty(document, 'visibilityState', { get: function () { return 'visible' }, configurable: true })
-    Object.defineProperty(document, 'webkitHidden', { get: function () { return false }, configurable: true })
-  } catch (e) {}
-  var swallow = function (e) { e.stopImmediatePropagation() }
-  document.addEventListener('visibilitychange', swallow, true)
-  document.addEventListener('webkitvisibilitychange', swallow, true)
-  window.addEventListener('blur', swallow, true)
 
   // --- player ads: ad data leaves player responses before the player reads them ---
   // The rules (config.prune, null while the layer is off) are PlayerAdPrune in PageConfig.kt: keys to

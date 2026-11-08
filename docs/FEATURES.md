@@ -26,7 +26,7 @@ move it up and flip its status. New ideas go in the backlog.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | YouTube in a WebView (`m.youtube.com`) | done | native Compose activity hosting the WebView |
-| Fullscreen video | partial | WebChromeClient custom-view handling; rotation/immersive polish pending |
+| Fullscreen video | done | YouTube's fullscreen button covers the screen with the video, system bars hidden (a swipe from the edge shows them for a moment). The screen turns to the video's shape, landscape for a wide video and portrait for a tall one, either way up, and goes back to how it was on leaving. Back leaves fullscreen. |
 | Resume where you left off | done | each history entry keeps its playback position in the native store (last 2000 videos), so it survives identity changes. Rewinds 5 s; skips videos under 5 s in or within 15 s of the end; a `t=` URL parameter wins. Saved every 10 s while playing and on pause, end and leaving the app. |
 | Fresh identity every launch | done | each process starts with an empty WebView data directory; each new WebView (cold Activity start, renderer crash) gets a new WebView profile, and the old one is wiped once its WebView is destroyed. WebViews without profile support restart the app process instead. `SOCS` (reject all) and `PREF` (theme, language, region) are set before the first request, so no consent page. |
 | Launch behavior | done | a cold launch opens Feeds (Library without subs) and loads nothing; the Watch tab loads YouTube home when empty; after process death the last URL reloads. Config changes (rotation, theme, PiP size) never recreate the screen. |
@@ -34,15 +34,15 @@ move it up and flip its status. New ideas go in the backlog.
 | Links leaving YouTube | done | YouTube, its consent page and the `google.com/sorry` captcha stay in the app; every other link opens in the browser or the matching app. |
 | Ad blocking | done | four layers, each a switch in Settings > Content and all on by default. **Video ads**: the early script deletes `adPlacements`, `adSlots` and `playerAds` from player responses before YouTube's player reads them (the `ytInitialPlayerResponse` global, `JSON.parse`, `fetch` and XHR answers from `/youtubei/v1/player`, `get_watch` and friends), after uBlock Origin's `json-prune` rules, and drops ad entries from Shorts sequences. **Ad servers**: requests to doubleclick, googlesyndication, googleadservices, googletagservices and YouTube's ad paths (`/pagead/`, `/api/stats/ads`, `/ptracking`, `/get_midroll_info`, `/youtubei/v1/player/ad_break`, `/pcs/activeview`) get an empty answer; the video streams and `/youtubei/v1/player` never match. **Ads in pages**: CSS hides promoted videos, "sparkles" ad cards, ad slots and companion ads. **Skip leaked ads**: an ad that still plays is muted, played at 16x, and its skip button pressed once it shows; the viewer's mute state and speed come back after it. Of four leaked ads timed with it, two ended within 5 s, one ran 19.5 s and one went unmeasured, so it "tries" to skip. Every ad that shows counts as `ad.leak` in Settings > About > Diagnostics. Measured over 10 loads per setting: 2 ads with nothing on, 0 with all four on, 0 with video ads or ad servers alone. Measurements and sources: `docs/research/ad-blocking.md`. |
 | SponsorBlock | done | segments come from SponsorBlock's hash-prefix API (`/api/skipSegments/<first 4 hex of sha256(id)>`, so the server never learns the video), fetched natively with a generic user agent and no cookie, cached for the last 32 videos. Each category (sponsor, self-promotion, interaction reminder, intro, outro, preview, filler, non-music section) is Skip, Mute, Show or Off; sponsor and self-promotion skip by default, the rest show. A skip happens only when playback runs into a segment, never after a seek into one, and shows "Skipped sponsor" with Undo, which seeks back and leaves that segment alone for the rest of the playback. Mute holds only inside the segment and restores the mute state after. Every segment that is not Off is marked on the progress bar in SponsorBlock's colors. Offline, a 404 (no segments) or a server error: the video plays as it is and nothing shows. The server is configurable (https only, checked as you type); settings changes reach the video on screen at once. |
-| Background playback | partial | foreground service + Page-Visibility guard keep audio going when backgrounded. No lock-screen / notification transport controls yet (needs MediaSession). |
-| Back navigation | done | predictive back throughout: Watch goes back through the page's history, a native tab goes back to Watch once it has something, Settings and search close (Settings shrinks toward the swiped edge as you drag), and at the root the system back-to-home animation plays. |
+| Background playback | done | a video that plays keeps playing after Home, another app, the screen going off, or back at Watch's root (which sends the app to the background instead of closing it). A media session shows it in the notification, on the lock screen and to Bluetooth and headset buttons: title, channel, still, play/pause, and a seek bar; no next or previous. Paused, the notification stays for 10 minutes away from the app, then goes. Swiping the app away from recents pauses the video and removes the notification. Unplugged headphones or a lost Bluetooth device pause it. The app neither declares nor asks for the notification permission; media notifications do not need it. Media buttons need the video to have made sound first (see known risks). |
+| Back navigation | done | predictive back throughout: Watch goes back through the page's history, a native tab goes back to Watch once it has something, Settings and search close (Settings shrinks toward the swiped edge as you drag), and at the root the system back-to-home animation plays, except while a video plays: then the app goes to the background and the video plays on. |
 | App shell (Material 3 Expressive) | done | Expressive theme and motion, wallpaper colors (Android 12+) or a red fallback palette, light and dark, edge to edge with no launch flash. Bottom navigation (Watch, Feeds, Library, History) with fade-through tab motion. The WebView stays alive under the native tabs. |
 | Watch top bar | done | back (when the page can go back), star, search, YouTube home, and an overflow with Share (system share sheet, `www.youtube.com` link) and Settings. No title; its color follows YouTube's own header (`#0f0f0f` on watch pages and in dark theme, white otherwise), so bar and page read as one surface. |
 | YouTube's own chrome hidden | done | CSS hides YouTube's header, pivot bar, sign-in and Premium nags and app promos, and moves the player and comments panel up into the freed space. YouTube's search UI comes back while its in-page search box is in use. |
 | Native search | done | a search action on every tab opens a full-screen field (prefilled and selected on a results page) and loads `m.youtube.com/results` in Watch. |
 | Load progress and errors | done | a thin progress line under the Watch bar while a page loads; a failed main-frame load shows a native "You're offline" or "This page didn't load" state with Retry instead of Chromium's error page. |
 | Theme sync with YouTube | done | switching the system theme while the app runs rewrites YouTube's `PREF` theme flag (keeping YouTube's other flags) and reloads the page, unless a video is playing; then the next page load picks it up. The WebView background follows the theme. |
-| Now-playing bar | partial | above the navigation bar on native tabs while Watch shows a video: still, title, channel and a progress line that waves while playing; tap returns to Watch. Play/pause arrives with background audio (stage 7). |
+| Now-playing bar | done | above the navigation bar on native tabs while Watch shows a video: still, title, channel, a play/pause button and a progress line that waves while playing; tap returns to Watch. The button acts like the notification's. |
 | Settings | partial | from the overflow menu. Content (Ad blocking with a switch per layer, SponsorBlock with its segment actions in a bottom sheet and the server in a dialog, Remove all Shorts), Feed (videos per page), Appearance (dynamic color), Library (Manage tags, export, import) and About (app and WebView versions, Diagnostics counts). Playback and Privacy appear when their settings land. |
 | Accessibility baseline | done | content and state descriptions (star "Starred" / "Not starred", watched progress on thumbnails, switches), 48 dp targets, TalkBack skips whatever lies under an open tab or Settings, layouts hold at font scale 1.3. |
 
@@ -64,7 +64,6 @@ These are the priority after v0 compiles and runs. All local, no login.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Lock-screen / notification playback controls | todo | MediaSession wired to the WebView's `<video>`; upgrades background playback from "keeps going" to "controllable". |
 | Picture-in-picture | todo | Android PiP for the player surface. |
 | Download video | todo | |
 | Play original audio (un-dub) | todo | |
@@ -80,9 +79,13 @@ These are the priority after v0 compiles and runs. All local, no login.
 
 ## Known risks / open questions
 
-- **Background audio in a WebView is fragile.** The visibility guard + foreground service is a
-  best-effort approach; some YouTube changes or Android OEM power management can still pause it.
-  A MediaSession bound to the `<video>` is the robust fix (in the backlog).
+- **Background audio in a WebView leans on Chromium.** Chromium pauses media when its window turns
+  invisible, so while a media session lives the WebView reports a visible window whatever it is. A
+  Chromium that pauses on something else, or OEM power management that kills the foreground service,
+  would still stop it.
+- **Media buttons after a muted start.** YouTube sometimes starts a video muted ("Tap to unmute"), and
+  Android sends headset and Bluetooth buttons only to the app that last played audio. Until the video
+  has made sound, those buttons go elsewhere; the notification and lock-screen controls still work.
 - **Ad blocking follows YouTube's ad delivery.** The prune keys and blocked paths match what
   m.youtube.com does in November 2026. When YouTube moves ads elsewhere (server-stitched ads, new
   keys), the safety net still mutes and skips them and `ad.leak` in Diagnostics climbs; that count

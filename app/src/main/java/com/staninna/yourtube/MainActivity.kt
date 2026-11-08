@@ -4,11 +4,11 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.initializer
@@ -16,8 +16,11 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.staninna.yourtube.feed.YouTubeFeedFetcher
 import com.staninna.yourtube.ui.TubeRoot
 import com.staninna.yourtube.ui.theme.TubeTheme
+import com.staninna.yourtube.web.PlayerCommand
 import com.staninna.yourtube.web.WebViewHost
 import com.staninna.yourtube.web.WebViewStartup
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -29,9 +32,12 @@ class MainActivity : ComponentActivity() {
 
     private val app: TubeApp get() = application as TubeApp
     private val vm: MainViewModel by viewModels {
-        viewModelFactory { initializer { MainViewModel(app.store, app.channels, YouTubeFeedFetcher(), app.segments) } }
+        viewModelFactory { initializer { MainViewModel(app.store, app.channels, YouTubeFeedFetcher(), app.segments, app.playback) } }
     }
     private lateinit var host: WebViewHost
+
+    /** This screen's page, as the media session reaches it. */
+    private val page: (PlayerCommand) -> Unit = { host.post(it) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,6 +48,9 @@ class MainActivity : ComponentActivity() {
         (savedInstanceState?.getString(KEY_URL) ?: consumeRestartUrl())?.let(vm::open)
         lifecycleScope.launch { vm.openRequests.collect(host::load) }
         lifecycleScope.launch { vm.pagePushes.collect(host::post) }
+        app.playback.attach(page)
+        lifecycleScope.launch { app.playback.state.map { it.session }.distinctUntilChanged().collect(host::keepPlaying) }
+        backMovesTaskToBack()
 
         setContent {
             val settings by vm.settings.collectAsStateWithLifecycle()
@@ -65,29 +74,37 @@ class MainActivity : ComponentActivity() {
         host.restorableUrl?.let { outState.putString(KEY_URL, it) }
     }
 
-    override fun onPause() {
-        super.onPause()
-        // Keep audio going when backgrounded: hold the process with a foreground service while
-        // something is playing.
-        if (vm.playing.value && !isChangingConfigurations) {
-            ContextCompat.startForegroundService(this, Intent(this, PlaybackService::class.java))
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        stopService(Intent(this, PlaybackService::class.java))
+    override fun onStart() {
+        super.onStart()
+        app.playback.setVisible(true)
     }
 
     override fun onStop() {
         super.onStop()
+        app.playback.setVisible(false)
         app.store.flush()
     }
 
     override fun onDestroy() {
-        stopService(Intent(this, PlaybackService::class.java))
+        app.playback.detach(page)
         app.store.flush()
         super.onDestroy()
+    }
+
+    /**
+     * Back at the root while a video plays sends the app to the background instead of closing it
+     * (D4). Registered before the content, so every screen's own back handling comes first.
+     */
+    private fun backMovesTaskToBack() {
+        val toBack = object : OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() {
+                moveTaskToBack(true)
+            }
+        }
+        onBackPressedDispatcher.addCallback(this, toBack)
+        lifecycleScope.launch {
+            app.playback.state.collect { toBack.isEnabled = it.backMovesTaskToBack }
+        }
     }
 
     /**

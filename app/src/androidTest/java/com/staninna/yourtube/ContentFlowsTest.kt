@@ -73,6 +73,7 @@ class ContentFlowsTest {
             ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)),
             FeedFetcher { ChannelFetch.Ok(emptyList(), FeedSource.RSS) },
             SegmentSource { _, videoId -> if (videoId == VIDEO) listOf(sponsor) else null },
+            testHub(),
         )
         lateinit var host: WebViewHost
         compose.runOnUiThread {

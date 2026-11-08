@@ -33,6 +33,8 @@ import com.staninna.yourtube.sponsor.SegmentSource
 import com.staninna.yourtube.ui.TubeRoot
 import com.staninna.yourtube.ui.theme.TubeTheme
 import com.staninna.yourtube.ui.theme.dynamicColorAvailable
+import com.staninna.yourtube.web.PlaybackEvent
+import com.staninna.yourtube.web.PlayerCommand
 import com.staninna.yourtube.web.WebViewHost
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -59,12 +61,16 @@ class TubeRootTest {
         Store(dir, CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1)))
     }
 
+    private val hub by lazy { testHub() }
+    private lateinit var vm: MainViewModel
+
     private fun setContent() {
-        val vm = MainViewModel(
+        vm = MainViewModel(
             store,
             ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)),
             FeedFetcher { ChannelFetch.Ok(emptyList(), FeedSource.RSS) },
             SegmentSource { _, _ -> emptyList() },
+            hub,
         )
         lateinit var host: WebViewHost
         compose.runOnUiThread { host = WebViewHost(compose.activity, store.settings, vm, onRestartNeeded = {}) }
@@ -196,6 +202,21 @@ class TubeRootTest {
             .performClick()
         compose.waitUntil(5_000) { store.settings.value.removeShorts }
         assertEquals(true, store.settings.value.removeShorts)
+    }
+
+    @Test fun theNowPlayingBarPlaysAndPausesThroughTheHub() {
+        setContent()
+        val sent = mutableListOf<PlayerCommand>()
+        compose.runOnUiThread {
+            hub.attach { sent += it }
+            vm.onNavigated("https://m.youtube.com/watch?v=dQw4w9WgXcQ")
+            vm.onPlayback(PlaybackEvent(PlaybackKind.PLAY, "dQw4w9WgXcQ", 10.0, 212.0, paused = false))
+        }
+        // Library is the start tab without subs: the bar shows under it.
+        compose.onNodeWithContentDescription("Pause").performClick()
+        compose.runOnUiThread { vm.onPlayback(PlaybackEvent(PlaybackKind.PAUSE, "dQw4w9WgXcQ", 11.0, 212.0, paused = true)) }
+        compose.onNodeWithContentDescription("Play").performClick()
+        compose.runOnUiThread { assertEquals(listOf(PlayerCommand.Pause, PlayerCommand.Play), sent) }
     }
 
     @Test fun watchTopBarOffersSearchHomeAndOverflow() {

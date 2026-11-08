@@ -91,7 +91,7 @@ class FeedsFlowsTest {
 
     private fun setContent() {
         vm = MainViewModel(
-            store, ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)), fetcher, SegmentSource { _, _ -> emptyList() },
+            store, ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)), fetcher, SegmentSource { _, _ -> emptyList() }, testHub(),
         )
         lateinit var host: WebViewHost
         compose.runOnUiThread { host = WebViewHost(compose.activity, store.settings, vm, onRestartNeeded = {}) }

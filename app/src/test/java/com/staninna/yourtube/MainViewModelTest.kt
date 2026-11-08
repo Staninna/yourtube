@@ -10,9 +10,11 @@ import com.staninna.yourtube.feed.ChannelFetch
 import com.staninna.yourtube.feed.FeedFetcher
 import com.staninna.yourtube.feed.FeedSource
 import com.staninna.yourtube.page.ChannelResolver
+import com.staninna.yourtube.playback.PlaybackHub
 import com.staninna.yourtube.sponsor.SegmentSource
 import com.staninna.yourtube.web.PageReport
 import com.staninna.yourtube.web.PlaybackEvent
+import com.staninna.yourtube.web.PlayerCommand
 import com.staninna.yourtube.web.PlayerFacts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -46,13 +48,15 @@ class MainViewModelTest {
     private fun item(type: ItemType) = StarredItem(id = "x", type = type, title = "x", url = "u")
 
     private lateinit var store: Store
+    private lateinit var hub: PlaybackHub
 
     private val noFeeds = FeedFetcher { ChannelFetch.Ok(emptyList(), FeedSource.RSS) }
     private val noSegments = SegmentSource { _, _ -> emptyList() }
 
     private fun TestScope.viewModel(): Pair<MainViewModel, Channel<String>> {
         store = Store(tmp.root, backgroundScope)
-        val vm = MainViewModel(store, ChannelResolver(store, backgroundScope), noFeeds, noSegments)
+        hub = PlaybackHub(backgroundScope, now = { testScheduler.currentTime }, startService = {})
+        val vm = MainViewModel(store, ChannelResolver(store, backgroundScope), noFeeds, noSegments, hub)
         val opened = Channel<String>(Channel.UNLIMITED)
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.openRequests.collect { opened.send(it) } }
         return vm to opened
@@ -184,7 +188,7 @@ class MainViewModelTest {
         assertEquals(setOf("library.json"), vm.corruptNotice.value)
         vm.dismissCorruptNotice()
         assertNull(vm.corruptNotice.value)
-        assertNull("a new screen in the same process does not bring it back", MainViewModel(store, ChannelResolver(store, backgroundScope), noFeeds, noSegments).corruptNotice.value)
+        assertNull("a new screen in the same process does not bring it back", MainViewModel(store, ChannelResolver(store, backgroundScope), noFeeds, noSegments, hub).corruptNotice.value)
     }
 
     @Test fun backupsReportThroughTheEventStream() = runTest {
@@ -212,5 +216,49 @@ class MainViewModelTest {
         assertTrue(vm.playing.value)
         vm.report(PlaybackKind.ENDED, paused = false)
         assertFalse("an ended video is not playing, whatever paused says", vm.playing.value)
+    }
+
+    // --- media session ---
+
+    @Test fun playPauseGoesToThePageThroughTheHub() = runTest {
+        val (vm, _) = viewModel()
+        val sent = mutableListOf<PlayerCommand>()
+        hub.attach { sent += it }
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        vm.report(PlaybackKind.PLAY, paused = false)
+        vm.playPause()
+        vm.report(PlaybackKind.PAUSE, paused = true)
+        vm.playPause()
+        assertEquals(listOf(PlayerCommand.Pause, PlayerCommand.Play), sent)
+    }
+
+    @Test fun theSessionShowsWhatWatchPlays() = runTest {
+        val (vm, _) = viewModel()
+        vm.showVideo()
+        vm.report(PlaybackKind.PLAY, paused = false)
+        val media = hub.media.value!!
+        assertEquals(video, media.videoId)
+        assertEquals("Never Gonna", media.title)
+        assertEquals(30_000L, media.positionMs)
+        vm.onNavigated("https://m.youtube.com/@RickAstleyYT")
+        assertNull(hub.media.value)
+    }
+
+    @Test fun aNativeTabKeepsThePlayingVideoInTheBar() = runTest {
+        val (vm, _) = viewModel()
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        vm.report(PlaybackKind.PLAY, paused = false)
+        vm.selectTab(Tab.FEEDS)
+        assertTrue(vm.playing.value)
+        assertEquals(video, vm.nowPlaying.value?.videoId)
+    }
+
+    @Test fun comingBackToAVideoForgetsItsOldState() = runTest {
+        val (vm, _) = viewModel()
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        vm.report(PlaybackKind.PLAY, paused = false)
+        vm.onNavigated("https://m.youtube.com/@RickAstleyYT")
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        assertFalse("not playing until the page says so", vm.playing.value)
     }
 }

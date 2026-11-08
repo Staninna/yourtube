@@ -1,15 +1,18 @@
 package com.staninna.yourtube
 
 import android.app.Application
-import android.app.NotificationChannel
-import android.app.NotificationManager
+import android.content.Intent
 import android.os.Build
+import android.os.SystemClock
 import com.staninna.yourtube.data.Store
 import com.staninna.yourtube.page.ChannelResolver
+import com.staninna.yourtube.playback.PlaybackHub
+import com.staninna.yourtube.playback.PlaybackService
 import com.staninna.yourtube.sponsor.SponsorBlockClient
 import com.staninna.yourtube.web.WebViewStartup
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.SupervisorJob
 import java.io.File
 
@@ -20,6 +23,10 @@ class TubeApp : Application() {
     lateinit var store: Store
         private set
     lateinit var channels: ChannelResolver
+        private set
+
+    /** Where the page and the media session meet; outlives any one screen, as the session does. */
+    lateinit var playback: PlaybackHub
         private set
 
     /** SponsorBlock lookups; process-wide so its cache outlives a recreated screen. */
@@ -34,13 +41,8 @@ class TubeApp : Application() {
         // One thread is the store's single writer.
         store = Store(filesDir, CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1)))
         channels = ChannelResolver(store, appScope)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                PLAYBACK_CHANNEL_ID,
-                getString(R.string.playback_channel_name),
-                NotificationManager.IMPORTANCE_LOW,
-            ).apply { setShowBadge(false) }
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        playback = PlaybackHub(MainScope(), SystemClock::elapsedRealtime) {
+            startService(Intent(this, PlaybackService::class.java))
         }
     }
 
@@ -50,8 +52,4 @@ class TubeApp : Application() {
         } else {
             File("/proc/self/cmdline").readText().substringBefore('\u0000')
         }
-
-    companion object {
-        const val PLAYBACK_CHANNEL_ID = "playback"
-    }
 }

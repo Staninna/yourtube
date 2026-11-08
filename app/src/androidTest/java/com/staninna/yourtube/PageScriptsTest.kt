@@ -155,6 +155,49 @@ class PageScriptsTest {
         assertEquals(css, true, css.contains("rgb(0, 212, 0)") || css.contains("#00d400"))
     }
 
+    // --- media session commands (main.js) ---
+
+    @Test fun playPauseAndSeekReachTheVideo() = runBlocking {
+        loadWithMain(Settings())
+        eval("v.play = function () { window.played = true; return Promise.resolve() }; v.pause = function () { window.paused = true }")
+        eval("receive({type: 'play'}); receive({type: 'pause'})")
+        assertEquals("[true,true]", eval("JSON.stringify([!!window.played, !!window.paused])"))
+        assertEquals("42.5", eval("receive({type: 'seek', videoId: '$VIDEO', position: 42.5}); String(t)"))
+        // A seek meant for another video, or one during an ad, is left alone.
+        assertEquals("42.5", eval("receive({type: 'seek', videoId: 'bbbbbbbbbbb', position: 7}); String(t)"))
+        assertEquals("42.5", eval("player.classList.add('ad-showing'); receive({type: 'seek', videoId: '$VIDEO', position: 7}); String(t)"))
+    }
+
+    @Test fun seeksAndSpeedChangesReportAtOnceWithTheRate() = runBlocking {
+        loadWithMain(Settings())
+        // Getters, not setters: setting playbackRate would queue a ratechange of its own.
+        eval("var ready = 0; Object.defineProperty(v, 'readyState', { get: function () { return ready } })")
+        eval("Object.defineProperty(v, 'playbackRate', { get: function () { return 1.5 } }); fire('ratechange')")
+        assertEquals("not while the video loads: it would overwrite the resume position", "0", eval("String(sent('playback').length)"))
+        eval("ready = 1; fire('ratechange'); t = 50; fire('seeked')")
+        assertEquals("[[\"time\",1.5,0],[\"time\",1.5,50]]", eval(
+            "JSON.stringify(sent('playback').map(function (m) { return [m.kind, m.rate, m.position] }))",
+        ))
+    }
+
+    @Test fun playAndPauseDuringAnAdReachTheAppWithTheVideosNumbers() = runBlocking {
+        loadWithMain(Settings())
+        eval("var isPaused = false; Object.defineProperty(v, 'paused', { get: function () { return isPaused } })")
+        eval("t = 30; d = 100; fire('timeupdate')")
+        eval("TubeBridge.sent = []; player.classList.add('ad-showing'); t = 5; d = 15; isPaused = true; fire('pause')")
+        eval("isPaused = false; fire('play'); fire('timeupdate')")
+        assertEquals(
+            "[[\"pause\",true,30,100],[\"play\",false,30,100]]",
+            eval("JSON.stringify(sent('playback').map(function (m) { return [m.kind, m.paused, m.position, m.duration] }))"),
+        )
+    }
+
+    @Test fun aPauseDuringAPreRollSendsNothing() = runBlocking {
+        loadWithMain(Settings())
+        eval("player.classList.add('ad-showing'); t = 5; d = 15; fire('pause')")
+        assertEquals("0", eval("String(sent('playback').length)"))
+    }
+
     // --- ad safety net (main.js) ---
 
     @Test fun aLeakedAdIsCountedMutedSpedUpAndSkipped() = runBlocking {
