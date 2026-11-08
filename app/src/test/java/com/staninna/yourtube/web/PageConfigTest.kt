@@ -67,9 +67,17 @@ class PageConfigTest {
         }
         for (selector in listOf(
             "like-button-view-model", "dislike-button-view-model", ".YtmCommentRendererDetails", "ytm-comment-simplebox-renderer",
-            ".search-bar-entry-point-buttons", "ytm-chip-cloud-chip-renderer.more-drawer",
+            "navigation-item-view-model:has(a[href*=\"music.youtube.com\"])",
+            "navigation-item-view-model:has(a[href*=\"youtubekids.com\"])",
+            "navigation-item-view-model:has(a[href*=\"youtube-create\"])",
+            "ytm-compact-channel-renderer .modern-subscribe-button",
+            "yt-page-header-view-model .ytFlexibleActionsViewModelAction:has(> toggle-button-view-model)",
         )) {
             assertTrue(selector, selector in hidden)
+        }
+        // The app has its own home, so YouTube's keeps its compass, voice search and search card.
+        for (kept in listOf(".search-bar-entry-point-buttons", "ytm-chip-cloud-chip-renderer.more-drawer", "ytm-feed-nudge-renderer")) {
+            assertFalse(kept, hidden.any { kept in it })
         }
         // Share is the action bar's first plain button; only the ones after it go.
         assertTrue(".slim-video-action-bar-actions > button-view-model ~ button-view-model" in hidden)

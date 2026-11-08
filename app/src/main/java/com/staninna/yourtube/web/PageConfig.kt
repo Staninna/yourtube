@@ -37,7 +37,7 @@ object PageConfig {
         add(HEADER_CSS)
         add(NAG_CSS)
         add(ACCOUNT_CSS)
-        add(HOME_CSS)
+        add(DRAWER_CSS)
         add(BRAND_CSS)
         if (settings.adBlocking.isOn(AdLayer.DISPLAY)) add(DISPLAY_ADS_CSS)
         if (settings.removeShorts) add(SHORTS_CSS)
@@ -111,9 +111,12 @@ object PageConfig {
      * action after Share (Save, Report, Clip, Download and the like); Share is the bar's first plain
      * button in every layout seen, so it stays by position, whatever the page's language. In comments:
      * the row with the like, dislike and reply icons and each comment's menu (Report), and the "Add a
-     * comment" box. On posts: like and dislike. Any link to Google's sign-in page goes too.
+     * comment" box. On posts: like and dislike. In search results: a channel card's Subscribe. On a
+     * playlist: Save, the header's one toggle button. Any link to Google's sign-in page goes too.
      */
     private val ACCOUNT_CSS = listOf(
+        "ytm-compact-channel-renderer .modern-subscribe-button",
+        "yt-page-header-view-model .ytFlexibleActionsViewModelAction:has(> toggle-button-view-model)",
         "like-button-view-model", "dislike-button-view-model",
         ".slim-video-action-bar-actions > button-view-model ~ button-view-model",
         ".YtmCommentRendererDetails", "ytm-comment-simplebox-renderer",
@@ -122,15 +125,14 @@ object PageConfig {
     ).joinToString(",") + "{display:none !important}"
 
     /**
-     * Home with nothing watched yet shows only YouTube's logo: the explore drawer (compass), the search
-     * bar and voice search under it, and the "Try searching to get started" card go. Search lives in
-     * the app's own bar. The compass chip in front of home's topic chips goes as well, and with it the
-     * drawer of YouTube Music, Kids and Create.
+     * The explore drawer behind the compass keeps YouTube's own topics (Music, Gaming, Podcasts) but
+     * drops what leads out of YouTube or needs an account: YouTube Music, Kids and Create, Memberships,
+     * and the divider over the three apps.
      */
-    private val HOME_CSS = listOf(
-        ".search-bar-entry-point-buttons", "ytm-rich-section-renderer:has(ytm-feed-nudge-renderer)",
-        "ytm-chip-cloud-chip-renderer.more-drawer",
-    ).joinToString(",") + "{display:none !important}"
+    private val DRAWER_CSS = listOf("music.youtube.com", "youtubekids.com", "youtube-create", "/channel_memberships")
+        .map { "navigation-item-view-model:has(a[href*=\"$it\"])" }
+        .plus("divider-view-model:has(+ navigation-item-view-model a[href*=\"music.youtube.com\"])")
+        .joinToString(",") + "{display:none !important}"
 
     /** The app icon's purple, which takes the place of YouTube's brand red in pages. */
     internal const val BRAND_PURPLE = "#7C3AED"
