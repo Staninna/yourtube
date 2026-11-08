@@ -66,8 +66,9 @@ fun MediaRow(
     leading: MediaLeading,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    // Stage 4 opens the tag sheet from here.
     onLongClick: (() -> Unit)? = null,
+    /** What the long press does, as TalkBack offers it ("Edit tags"). */
+    onLongClickLabel: String? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val progress = (leading as? MediaLeading.Thumbnail)?.progress
@@ -76,16 +77,17 @@ fun MediaRow(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 72.dp)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick, onLongClickLabel = onLongClickLabel)
             .padding(start = 16.dp, end = if (trailing != null) 4.dp else 16.dp, top = 8.dp, bottom = 8.dp)
             .semantics(mergeDescendants = true) { progress?.let { stateDescription = describe(it) } },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         when (leading) {
-            is MediaLeading.Thumbnail -> Thumbnail(leading, Modifier.width(144.dp))
-            is MediaLeading.Avatar -> Box(Modifier.width(144.dp), contentAlignment = Alignment.Center) {
-                ChannelAvatar(leading.name, leading.key, leading.url, size = 64.dp)
+            is MediaLeading.Thumbnail -> Thumbnail(leading, Modifier.width(LEADING_WIDTH))
+            // At the start of the same slot a still takes, as tall as a still, so titles line up with video rows.
+            is MediaLeading.Avatar -> Box(Modifier.width(LEADING_WIDTH), contentAlignment = Alignment.CenterStart) {
+                ChannelAvatar(leading.name, leading.key, leading.url, size = LEADING_WIDTH * 9f / 16f)
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -159,6 +161,9 @@ private fun WatchedBar(fraction: Float, modifier: Modifier) {
         Box(Modifier.fillMaxHeight().fillMaxWidth(fraction.coerceAtLeast(0.04f)).clip(CircleShape).background(WATCHED_RED))
     }
 }
+
+/** The leading slot's width: a 16:9 still, or an avatar as tall as one. */
+private val LEADING_WIDTH = 144.dp
 
 /** YouTube's progress red: the cue viewers already read as "watched", legible on any still. */
 private val WATCHED_RED = Color(0xFFFF0033)

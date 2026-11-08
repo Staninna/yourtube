@@ -37,7 +37,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
@@ -65,6 +64,7 @@ import com.staninna.yourtube.YouTube
 import com.staninna.yourtube.page.NowPlaying
 import com.staninna.yourtube.ui.components.NowPlayingBar
 import com.staninna.yourtube.web.WebViewHost
+import kotlinx.coroutines.flow.collectLatest
 
 /**
  * The app shell. Watch (the WebView) is always composed at the bottom so playback never stops; the
@@ -80,17 +80,35 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     val overlayOpen = settingsOpen || searchOpen
-    val snackbar = remember { SnackbarHostState() }
+    val snackbars = remember { Snackbars(SnackbarHostState(), SnackbarHostState()) }
+    val backup = rememberBackupActions(vm)
+    val corrupt by vm.corruptNotice.collectAsStateWithLifecycle()
 
+    // The newest notice replaces the one showing; its Undo goes with it, as in any Material app.
     LaunchedEffect(vm) {
-        vm.events.collect { event ->
-            when (event) {
-                is UiEvent.HistoryCleared -> {
-                    val result = snackbar.showSnackbar("History cleared", actionLabel = "Undo", duration = SnackbarDuration.Long)
-                    if (result == SnackbarResult.ActionPerformed) vm.undoClearHistory(event)
-                }
-            }
+        vm.events.collectLatest { event ->
+            val notice = Notices.of(event)
+            val result = snackbars.events.showSnackbar(
+                notice.message,
+                actionLabel = notice.action,
+                duration = if (notice.action != null) SnackbarDuration.Long else SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed && event is UiEvent.Undoable) vm.undo(event)
         }
+    }
+
+    // The damaged-store notice is state, not an event: it waits in its own queue until answered.
+    LaunchedEffect(corrupt) {
+        if (corrupt == null) return@LaunchedEffect
+        val notice = Notices.unreadableStore
+        val result = snackbars.notice.showSnackbar(
+            notice.message,
+            actionLabel = notice.action,
+            withDismissAction = true,
+            duration = SnackbarDuration.Indefinite,
+        )
+        if (result == SnackbarResult.ActionPerformed) backup.export()
+        vm.dismissCorruptNotice()
     }
 
     // Native tabs go back to Watch once it has something; Watch goes back through the page's history.
@@ -117,7 +135,8 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
         Scaffold(
             modifier = if (overlayOpen) Modifier.clearAndSetSemantics {} else Modifier,
             bottomBar = { TubeNavigationBar(tab, vm::selectTab) },
-            snackbarHost = { SnackbarHost(snackbar) },
+            // While Settings is open its own host shows the notices.
+            snackbarHost = { if (!settingsOpen) SnackbarStack(snackbars) },
             contentWindowInsets = WindowInsets(0),
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
@@ -136,7 +155,7 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
             enter = slideInHorizontally(MaterialTheme.motionScheme.defaultSpatialSpec()) { it / 3 } + fadeIn(),
             exit = slideOutHorizontally(MaterialTheme.motionScheme.fastSpatialSpec()) { it / 3 } + fadeOut(),
         ) {
-            SettingsScreen(vm, onBack = { settingsOpen = false })
+            SettingsScreen(vm, snackbars, backup, onBack = { settingsOpen = false })
         }
         AnimatedVisibility(visible = searchOpen, enter = fadeIn(), exit = fadeOut()) {
             SearchOverlay(
@@ -145,6 +164,7 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
                 onDismiss = closeSearch,
             )
         }
+        TagSheetHost(vm.library)
     }
 }
 

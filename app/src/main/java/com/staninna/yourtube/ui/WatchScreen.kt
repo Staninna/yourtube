@@ -126,19 +126,18 @@ private fun WatchTopBar(
 }
 
 /**
- * Stars or unstars what Watch shows. Disabled while the page is not identified yet (a `/@handle`
- * channel resolving); TalkBack hears "Starred" or "Not starred".
+ * Stars what Watch shows and opens its tag sheet, or unstars it with Undo. Disabled while the page is
+ * not identified yet (a `/@handle` channel resolving); TalkBack hears "Starred" or "Not starred".
  */
 @Composable
 private fun StarToggle(vm: MainViewModel, onDarkBar: Boolean) {
     val target by vm.starTarget.collectAsStateWithLifecycle()
-    val library by vm.library.collectAsStateWithLifecycle()
-    val starred = target?.let { t -> library.items.any { it.id == t.id } } == true
+    val starred by vm.library.starred.collectAsStateWithLifecycle()
     // The theme's primary is tuned for its own background; on a bar of the other tone use the inverse.
     val tint = if (onDarkBar == isSystemInDarkTheme()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.inversePrimary
     IconToggleButton(
         checked = starred,
-        onCheckedChange = { vm.toggleStarCurrent() },
+        onCheckedChange = { vm.library.onStarClick() },
         enabled = target != null,
         colors = IconButtonDefaults.iconToggleButtonColors(checkedContentColor = tint),
         modifier = Modifier.semantics { stateDescription = if (starred) "Starred" else "Not starred" },

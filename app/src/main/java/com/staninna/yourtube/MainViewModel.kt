@@ -2,14 +2,13 @@ package com.staninna.yourtube
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.staninna.yourtube.data.PlaybackKind
 import com.staninna.yourtube.data.FeedVideo
-import com.staninna.yourtube.data.HistoryEntry
-import com.staninna.yourtube.data.WatchProgress
 import com.staninna.yourtube.data.ItemType
 import com.staninna.yourtube.data.Library
+import com.staninna.yourtube.data.PlaybackKind
 import com.staninna.yourtube.data.StarredItem
 import com.staninna.yourtube.data.Store
+import com.staninna.yourtube.data.WatchProgress
 import com.staninna.yourtube.feed.FeedClient
 import com.staninna.yourtube.page.ChannelResolver
 import com.staninna.yourtube.page.NowPlaying
@@ -31,22 +30,20 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.InputStream
 
 enum class Tab { WATCH, FEEDS, LIBRARY, HISTORY }
-
-/** Something the user should hear about once, with a way to take it back. */
-sealed interface UiEvent {
-    data class HistoryCleared(val entries: List<HistoryEntry>) : UiEvent
-}
 
 class MainViewModel(
     private val store: Store,
     private val channels: ChannelResolver,
 ) : ViewModel(), PageListener {
 
-    val library = store.library
     val history = store.history
     val settings = store.settings
+
+    /** Store files that were unreadable at startup, until the user answers the notice about them. */
+    val corruptNotice: StateFlow<Set<String>?> = store.corruptNotice
 
     private val _tab = MutableStateFlow(startTab(store.library.value))
     val tab: StateFlow<Tab> = _tab.asStateFlow()
@@ -80,6 +77,11 @@ class MainViewModel(
 
     /** One-off notices for the snackbar. */
     val events: Flow<UiEvent> = _events.receiveAsFlow()
+
+    /** Starring, tags and Library's view. */
+    val library = LibraryModel(store, channels, viewModelScope, starTarget, emit = { _events.trySend(it) })
+
+    private val backups = BackupTransfer(store)
 
     private val opens = Channel<String>(Channel.BUFFERED)
     private var openedAnything = false
@@ -154,13 +156,7 @@ class MainViewModel(
 
     override fun resumePosition(videoId: String): Double? = store.resumePosition(videoId)
 
-    // --- library ---
-
-    fun toggleStarCurrent() {
-        starTarget.value?.let(store::toggleStar)
-    }
-
-    fun toggleStar(item: StarredItem) = store.toggleStar(item)
+    // --- history ---
 
     /** Clears history and resume positions, offering Undo. */
     fun clearHistory() {
@@ -170,7 +166,30 @@ class MainViewModel(
         _events.trySend(UiEvent.HistoryCleared(cleared))
     }
 
-    fun undoClearHistory(event: UiEvent.HistoryCleared) = store.restoreHistory(event.entries)
+    /** Removes one video and its resume position, offering Undo. */
+    fun removeHistory(videoId: String) {
+        val entry = history.value.firstOrNull { it.videoId == videoId } ?: return
+        store.removeHistory(videoId)
+        _events.trySend(UiEvent.HistoryRemoved(entry))
+    }
+
+    fun undo(event: UiEvent.Undoable) = when (event) {
+        is UiEvent.HistoryCleared -> store.restoreHistory(event.entries)
+        is UiEvent.HistoryRemoved -> store.restoreHistory(listOf(event.entry))
+        is UiEvent.Unstarred -> library.undoUnstar(event)
+    }
+
+    fun dismissCorruptNotice() = store.dismissCorruptNotice()
+
+    // --- backup: the UI owns the files, BackupTransfer the content ---
+
+    fun exportBackup(write: suspend (ByteArray) -> Unit) {
+        viewModelScope.launch { _events.send(backups.export(write)) }
+    }
+
+    fun importBackup(open: suspend () -> InputStream) {
+        viewModelScope.launch { _events.send(backups.import(open)) }
+    }
 
     private suspend fun resolve(page: PageIdentity.Channel) {
         if (channels.resolve(page.path) == null) Diagnostics.count("channel.unresolved", page.path)
@@ -179,7 +198,7 @@ class MainViewModel(
     // --- feeds ---
 
     fun refreshFeeds() {
-        val channelIds = library.value.items.filter { it.type == ItemType.CHANNEL }.mapNotNull { it.channelId }
+        val channelIds = store.library.value.items.filter { it.type == ItemType.CHANNEL }.mapNotNull { it.channelId }
         if (channelIds.isEmpty()) {
             _feeds.value = emptyList()
             return

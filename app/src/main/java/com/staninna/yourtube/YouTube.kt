@@ -27,6 +27,15 @@ object YouTube {
     /** m.youtube.com's page background in its light theme. */
     const val PAGE_LIGHT: Int = 0xFFFFFFFF.toInt()
 
+    /** A video id, as in `watch?v=`. */
+    val VIDEO_ID = Regex("[A-Za-z0-9_-]{11}")
+
+    /** A channel's canonical UC id, which builds its RSS feed. */
+    val CHANNEL_ID = Regex("UC[A-Za-z0-9_-]{22}")
+
+    /** A playlist id, as in `playlist?list=`. Anything Watch can star must pass this, so it survives a backup. */
+    val PLAYLIST_ID = Regex("[A-Za-z0-9_-]{2,}")
+
     fun watchUrl(videoId: String) = "$HOME/watch?v=$videoId"
     fun channelUrl(channelId: String) = "$HOME/channel/$channelId"
     fun playlistUrl(playlistId: String) = "$HOME/playlist?list=$playlistId"

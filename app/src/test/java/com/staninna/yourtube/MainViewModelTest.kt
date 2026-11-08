@@ -1,12 +1,15 @@
 package com.staninna.yourtube
 
+import com.staninna.yourtube.data.BackupProblem
 import com.staninna.yourtube.data.ItemType
 import com.staninna.yourtube.data.Library
 import com.staninna.yourtube.data.PlaybackKind
 import com.staninna.yourtube.data.StarredItem
 import com.staninna.yourtube.data.Store
 import com.staninna.yourtube.page.ChannelResolver
+import com.staninna.yourtube.web.PageReport
 import com.staninna.yourtube.web.PlaybackEvent
+import com.staninna.yourtube.web.PlayerFacts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
@@ -25,6 +28,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModelTest {
@@ -94,7 +98,7 @@ class MainViewModelTest {
         vm.clearHistory()
         assertTrue(store.history.value.isEmpty())
         val cleared = events.tryReceive().getOrNull() as UiEvent.HistoryCleared
-        vm.undoClearHistory(cleared)
+        vm.undo(cleared)
         assertEquals(listOf("VID"), store.history.value.map { it.videoId })
 
         store.clearHistory()
@@ -118,6 +122,72 @@ class MainViewModelTest {
 
     private fun MainViewModel.report(kind: PlaybackKind, paused: Boolean) =
         onPlayback(PlaybackEvent(kind, video, 30.0, 212.0, paused = paused))
+
+    // --- star, tag sheet and undo ---
+
+    private val channelId = "UCuAXFkgsw1L7xaCfnd5JJOw"
+
+    /** Watch shows [video], confirmed by the player. */
+    private fun MainViewModel.showVideo() {
+        val url = "https://m.youtube.com/watch?v=$video"
+        onNavigated(url)
+        onPageReport(PageReport(url, PageReport.Reason.METADATA, player = PlayerFacts(video, channelId, "Never Gonna", "Rick Astley")))
+    }
+
+    private fun TestScope.events(vm: MainViewModel): Channel<UiEvent> {
+        val events = Channel<UiEvent>(Channel.UNLIMITED)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.events.collect { events.send(it) } }
+        return events
+    }
+
+    @Test fun theWatchStarGoesThroughTheLibraryAndItsUndoThroughTheViewModel() = runTest {
+        val (vm, _) = viewModel()
+        val events = events(vm)
+        vm.showVideo()
+        assertFalse(vm.library.starred.value)
+        vm.library.onStarClick()
+        assertTrue(vm.library.starred.value)
+        assertEquals(video, vm.library.tagSheet.value?.item?.id)
+        vm.library.closeTagSheet()
+
+        vm.library.onStarClick()
+        assertFalse(vm.library.starred.value)
+        vm.undo(events.tryReceive().getOrNull() as UiEvent.Unstarred)
+        assertTrue(vm.library.starred.value)
+    }
+
+    @Test fun removingAHistoryEntryCanBeUndone() = runTest {
+        val (vm, _) = viewModel()
+        val events = events(vm)
+        store.recordPlayback(PlaybackKind.TIME, "VID", 60.0, 300.0, null)
+        vm.removeHistory("VID")
+        assertNull(store.resumePosition("VID"))
+        vm.undo(events.tryReceive().getOrNull() as UiEvent.HistoryRemoved)
+        assertEquals(55.0, store.resumePosition("VID")!!, 0.0)
+    }
+
+    @Test fun anUnreadableStoreStaysNoticedUntilAnswered() = runTest {
+        java.io.File(tmp.root, "library.json").writeText("{broken")
+        val (vm, _) = viewModel()
+        assertEquals(setOf("library.json"), vm.corruptNotice.value)
+        // Other notices come and go; this one is state, not an event, so they cannot push it out.
+        vm.showVideo()
+        vm.library.onStarClick()
+        vm.library.unstar(video)
+        assertEquals(setOf("library.json"), vm.corruptNotice.value)
+        vm.dismissCorruptNotice()
+        assertNull(vm.corruptNotice.value)
+        assertNull("a new screen in the same process does not bring it back", MainViewModel(store, ChannelResolver(store, backgroundScope)).corruptNotice.value)
+    }
+
+    @Test fun backupsReportThroughTheEventStream() = runTest {
+        val (vm, _) = viewModel()
+        val events = events(vm)
+        vm.exportBackup { throw IOException("full") }
+        assertEquals(UiEvent.ExportFailed, events.receive())
+        vm.importBackup { throw IOException("gone") }
+        assertEquals(UiEvent.ImportFailed(BackupProblem.UNREADABLE), events.receive())
+    }
 
     @Test fun aSeekWhilePausedDoesNotCountAsPlaying() = runTest {
         val (vm, _) = viewModel()

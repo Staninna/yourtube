@@ -4,6 +4,7 @@ import android.util.Log
 import com.staninna.yourtube.YouTube
 import com.staninna.yourtube.data.ChannelInfo
 import com.staninna.yourtube.data.Store
+import com.staninna.yourtube.readAtMost
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -66,7 +67,7 @@ class ChannelResolver(
                 metaContent(html, "itemprop", "identifier"),
                 RSS_CHANNEL_ID.find(html)?.groupValues?.get(1),
                 metaContent(html, "property", "og:url")?.let { CHANNEL_URL_ID.find(it)?.groupValues?.get(1) },
-            ).firstOrNull { it != null && CHANNEL_ID.matches(it) } ?: return null
+            ).firstOrNull { it != null && YouTube.CHANNEL_ID.matches(it) } ?: return null
             val name = (metaContent(html, "property", "og:title") ?: metaContent(html, "itemprop", "name"))
                 ?.let(::unescapeHtml)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
             val avatar = metaContent(html, "property", "og:image")?.let(::unescapeHtml)
@@ -116,18 +117,6 @@ class ChannelResolver(
             }
         }
 
-        private fun java.io.InputStream.readAtMost(limit: Int): ByteArray {
-            val out = java.io.ByteArrayOutputStream()
-            val buffer = ByteArray(64 * 1024)
-            while (out.size() < limit) {
-                val n = read(buffer, 0, minOf(buffer.size, limit - out.size()))
-                if (n < 0) break
-                out.write(buffer, 0, n)
-            }
-            return out.toByteArray()
-        }
-
-        private val CHANNEL_ID = Regex("UC[A-Za-z0-9_-]{22}")
         private val RSS_CHANNEL_ID = Regex("""feeds/videos\.xml\?channel_id=(UC[A-Za-z0-9_-]{22})""")
         private val CHANNEL_URL_ID = Regex("""/channel/(UC[A-Za-z0-9_-]{22})""")
         private val CONTENT_ATTR = Regex("""\bcontent="([^"]*)"""")

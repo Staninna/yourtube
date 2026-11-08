@@ -3,11 +3,36 @@ package com.staninna.yourtube.data
 import com.staninna.yourtube.YouTube
 import kotlinx.serialization.Serializable
 
+/** What a library item is. Library's segments are these types: Subs (channels), Videos, Playlists. */
 enum class ItemType { CHANNEL, VIDEO, PLAYLIST }
 
 /** A label from the shared pool. Items carry tag ids, so renaming a tag touches one record. */
 @Serializable
 data class Tag(val id: String, val name: String, val color: Int)
+
+/** A tag color from [TagPalette], with the name TalkBack reads for it. */
+data class TagColor(val name: String, val argb: Int)
+
+/** The colors tags take in turn when created, and the choices for recoloring one. */
+object TagPalette {
+    /** Material tonal reds, blues, greens and ambers, legible as dots on light and dark surfaces. */
+    val colors: List<TagColor> = listOf(
+        TagColor("Red", 0xFFE57373.toInt()),
+        TagColor("Blue", 0xFF64B5F6.toInt()),
+        TagColor("Green", 0xFF81C784.toInt()),
+        TagColor("Amber", 0xFFFFB74D.toInt()),
+        TagColor("Purple", 0xFFBA68C8.toInt()),
+        TagColor("Teal", 0xFF4DB6AC.toInt()),
+        TagColor("Pink", 0xFFF06292.toInt()),
+        TagColor("Brown", 0xFFA1887F.toInt()),
+    )
+
+    /** The color the tag created after [existing] tags gets. */
+    fun next(existing: Int): Int = colors[existing % colors.size].argb
+
+    /** [argb]'s name; an imported color outside the palette is "Custom". */
+    fun nameOf(argb: Int): String = colors.firstOrNull { it.argb == argb }?.name ?: "Custom"
+}
 
 /** A starred channel, video or playlist in the local library. */
 @Serializable
@@ -22,9 +47,20 @@ data class StarredItem(
     /** The channel's UC id, which builds its RSS feed; null when the page did not yield one. */
     val channelId: String? = null,
     val tagIds: Set<String> = emptySet(),
-    /** Set by `Store.toggleStar` when the item is starred. */
+    /** Set by `Store.star` when the item is starred; the library is newest first by it. */
     val addedAt: Long = 0,
-)
+) {
+    /**
+     * The channel a starred video belongs to, as a library item to subscribe to; null for channels and
+     * playlists, and for videos whose player gave no channel id or name. Its avatar is backfilled.
+     */
+    fun channelItem(): StarredItem? {
+        if (type != ItemType.VIDEO) return null
+        val id = channelId ?: return null
+        val name = author?.takeIf { it.isNotBlank() } ?: return null
+        return StarredItem(id = id, type = ItemType.CHANNEL, title = name, author = name, url = YouTube.channelUrl(id), channelId = id)
+    }
+}
 
 @Serializable
 data class Library(

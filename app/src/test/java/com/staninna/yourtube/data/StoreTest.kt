@@ -34,21 +34,22 @@ class StoreTest {
 
     // --- library ---
 
-    @Test fun togglingStarsAndUnstarsNewestFirst() = runTest {
+    @Test fun starringIsNewestFirstAndUnstarringRemoves() = runTest {
         val store = store()
-        store.toggleStar(video("A"))
+        store.star(video("A"))
         clock += 10
-        store.toggleStar(video("B"))
+        store.star(video("B"))
+        store.star(video("A")) // already starred: stays where it is
         val items = store.library.value.items
         assertEquals(listOf("B", "A"), items.map { it.id })
         assertEquals(listOf(clock, clock - 10), items.map { it.addedAt })
-        store.toggleStar(video("A"))
+        store.unstar("A")
         assertEquals(listOf("B"), store.library.value.items.map { it.id })
     }
 
     @Test fun libraryAndSettingsAreWrittenRightAwayAndReadBack() = runTest {
         val store = store()
-        store.toggleStar(video("A"))
+        store.star(video("A"))
         store.updateSettings { it.copy(hideShorts = true) }
         runCurrent()
 
@@ -63,7 +64,7 @@ class StoreTest {
     @Test fun concurrentUpdatesAreAllKept() = runTest {
         val store = store()
         val threads = (0 until 8).map { t ->
-            thread { repeat(50) { i -> store.toggleStar(video("v$t-$i")) } }
+            thread { repeat(50) { i -> store.star(video("v$t-$i")) } }
         }
         threads.forEach { it.join() }
         advanceUntilIdle()
@@ -74,10 +75,12 @@ class StoreTest {
 
     @Test fun deletingATagDetachesItInTheSameWrite() = runTest {
         val store = store()
-        store.toggleStar(video("A"))
+        store.star(video("A"))
         val music = store.createTag("Music")
         val talks = store.createTag("Talks")
-        store.setItemTags("A", setOf(music.id, talks.id, "unknown"))
+        store.setItemTag("A", music!!.id, attached = true)
+        store.setItemTag("A", talks!!.id, attached = true)
+        store.setItemTag("A", "unknown", attached = true)
         assertEquals(setOf(music.id, talks.id), store.library.value.items.single().tagIds)
         assertTrue(music.color != talks.color)
 
@@ -86,6 +89,155 @@ class StoreTest {
         assertEquals(listOf("Talks"), lib.tags.map { it.name })
         assertEquals(setOf(talks.id), lib.items.single().tagIds)
         assertEquals(listOf("A"), lib.items.map { it.id })
+    }
+
+    @Test fun restoringAnUnstarKeepsItsDateAndSurvivingTags() = runTest {
+        val store = store()
+        store.star(video("A"))
+        clock += 10
+        store.star(video("B"))
+        val keep = store.createTag("Keep", attachTo = "A")!!
+        val gone = store.createTag("Gone", attachTo = "A")!!
+        val unstarred = store.library.value.items.first { it.id == "A" }
+
+        store.unstar("A")
+        store.deleteTag(gone.id)
+        store.restoreStar(unstarred)
+        val restored = store.library.value.items
+        assertEquals(listOf("B", "A"), restored.map { it.id })
+        assertEquals(unstarred.addedAt, restored.last().addedAt)
+        assertEquals(setOf(keep.id), restored.last().tagIds)
+    }
+
+    @Test fun restoringAfterARestarKeepsTheNewerStar() = runTest {
+        val store = store()
+        store.star(video("A"))
+        val old = store.library.value.items.single()
+        store.unstar("A")
+        clock += 10
+        store.star(video("A"))
+        store.restoreStar(old)
+        assertEquals(listOf(clock), store.library.value.items.map { it.addedAt })
+    }
+
+    @Test fun creatingATagAttachesItAndReusesAnExistingName() = runTest {
+        val store = store()
+        store.star(video("A"))
+        store.star(video("B"))
+        val music = store.createTag("  Music  ", attachTo = "A")!!
+        assertEquals("Music", music.name)
+        val again = store.createTag("music", attachTo = "B")!!
+        assertEquals(music.id, again.id)
+        assertEquals(1, store.library.value.tags.size)
+        assertTrue(store.library.value.items.all { music.id in it.tagIds })
+        assertNull(store.createTag("   ", attachTo = "A"))
+        assertEquals(TagPalette.colors[0].argb, music.color)
+        assertEquals(TagPalette.colors[1].argb, store.createTag("Talks")!!.color)
+    }
+
+    @Test fun detachingATagKeepsTheOthers() = runTest {
+        val store = store()
+        store.star(video("A"))
+        val music = store.createTag("Music", attachTo = "A")!!
+        val talks = store.createTag("Talks", attachTo = "A")!!
+        store.setItemTag("A", music.id, attached = false)
+        assertEquals(setOf(talks.id), store.library.value.items.single().tagIds)
+    }
+
+    @Test fun renamingRefusesBlankAndTakenNames() = runTest {
+        val store = store()
+        val music = store.createTag("Music")!!
+        store.createTag("Talks")
+        store.renameTag(music.id, "talks")
+        store.renameTag(music.id, "  ")
+        assertEquals("Music", store.library.value.tags.first().name)
+        store.renameTag(music.id, "music") // its own name in another case is fine
+        assertEquals("music", store.library.value.tags.first().name)
+        store.renameTag(music.id, " Lo-fi   beats ")
+        assertEquals("Lo-fi beats", store.library.value.tags.first().name)
+    }
+
+    @Test fun recoloringChangesOneTag() = runTest {
+        val store = store()
+        val music = store.createTag("Music")!!
+        val talks = store.createTag("Talks")!!
+        store.recolorTag(music.id, TagPalette.colors[5].argb)
+        assertEquals(listOf(TagPalette.colors[5].argb, talks.color), store.library.value.tags.map { it.color })
+    }
+
+    @Test fun avatarsFillOnlyChannelsWithoutOne() = runTest {
+        val store = store()
+        val channel = StarredItem(id = "UC1", type = ItemType.CHANNEL, title = "C", url = "u", channelId = "UC1")
+        store.star(channel)
+        store.star(channel.copy(id = "UC2", thumbnail = "https://kept"))
+        store.setChannelAvatar("UC1", "https://new")
+        store.setChannelAvatar("UC2", "https://new")
+        assertEquals(mapOf("UC1" to "https://new", "UC2" to "https://kept"), store.library.value.items.associate { it.id to it.thumbnail })
+    }
+
+    @Test fun removingOneEntryCanBeUndoneWithItsPosition() = runTest {
+        val store = store()
+        store.time("A", 60.0)
+        clock += 10
+        store.time("B", 90.0)
+        val removed = store.history.value.first { it.videoId == "A" }
+        store.removeHistory("A")
+        assertNull(store.resumePosition("A"))
+
+        store.restoreHistory(listOf(removed))
+        assertEquals(listOf("B", "A"), store.history.value.map { it.videoId })
+        assertEquals(55.0, store.resumePosition("A")!!, 0.0)
+    }
+
+    // --- backup ---
+
+    @Test fun importMergesAndIsWrittenRightAway() = runTest {
+        val store = store()
+        store.star(video("A"))
+        val music = store.createTag("Music", attachTo = "A")!!
+        store.time("aaaaaaaaaaa", 40.0)
+        val incoming = Backup(
+            library = Library(
+                items = listOf(video("A").copy(tagIds = setOf("t-talks")), video("B").copy(tagIds = setOf("t-music"))),
+                tags = listOf(Tag("t-music", "MUSIC", 1), Tag("t-talks", "Talks", 2)),
+            ),
+            history = listOf(HistoryEntry("bbbbbbbbbbb", position = 30.0, duration = 300.0, watchedAt = 5)),
+            settings = Settings(hideShorts = true),
+        )
+        val report = store.import(incoming)
+        runCurrent()
+
+        assertEquals(ImportReport(itemsAdded = 1, itemsUpdated = 1, tagsAdded = 1, historyAdded = 1), report)
+        val reloaded = store()
+        val lib = reloaded.library.value
+        assertEquals(listOf("Music", "Talks"), lib.tags.map { it.name })
+        assertEquals(setOf(music.id), lib.items.first { it.id == "B" }.tagIds)
+        assertEquals(2, lib.items.first { it.id == "A" }.tagIds.size)
+        assertEquals(listOf("aaaaaaaaaaa", "bbbbbbbbbbb"), reloaded.history.value.map { it.videoId })
+        assertTrue(reloaded.settings.value.hideShorts)
+    }
+
+    @Test fun importIntoAFullHistoryStaysCapped() = runTest {
+        val store = store()
+        repeat(Store.HISTORY_CAP) {
+            clock += 1
+            store.time("v$it", 10.0)
+        }
+        val older = (0 until 10).map { HistoryEntry("old$it", watchedAt = it.toLong()) }
+        val newer = (0 until 10).map { HistoryEntry("new$it", watchedAt = clock + 1 + it) }
+        val report = store.import(Backup(history = older + newer))
+        val history = store.history.value
+        assertEquals(Store.HISTORY_CAP, history.size)
+        assertEquals("only the newer entries made it", 10, report.historyAdded)
+        assertEquals("new9", history.first().videoId)
+        assertTrue(history.none { it.videoId.startsWith("old") })
+    }
+
+    @Test fun backupHoldsPlaybackNotYetWritten() = runTest {
+        val store = store()
+        store.time("A", 42.0) // still inside the debounce window
+        assertEquals(42.0, store.backup().history.single().position, 0.0)
+        assertEquals(clock, store.backup().exportedAt)
     }
 
     // --- missing and corrupt files ---
@@ -102,12 +254,17 @@ class StoreTest {
         val store = store()
 
         assertEquals(setOf("library.json"), store.corruptFiles)
+        assertEquals(setOf("library.json"), store.corruptNotice.value)
+        store.dismissCorruptNotice()
+        assertNull("answered once, gone", store.corruptNotice.value)
         assertTrue(store.library.value.items.isEmpty())
         assertEquals("{not json", File(dir, "library.json.corrupt").readText())
 
-        store.toggleStar(video("A"))
+        store.star(video("A"))
         runCurrent()
-        assertEquals(listOf("A"), store().library.value.items.map { it.id })
+        val next = store()
+        assertEquals(listOf("A"), next.library.value.items.map { it.id })
+        assertNull("the next process finds nothing to report", next.corruptNotice.value)
         assertEquals("{not json", File(dir, "library.json.corrupt").readText())
     }
 

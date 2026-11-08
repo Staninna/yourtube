@@ -3,6 +3,11 @@ package com.staninna.yourtube.ui
 import android.content.pm.PackageInfo
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -13,8 +18,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Label
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.MaterialTheme
@@ -27,14 +37,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -51,14 +65,16 @@ import kotlinx.coroutines.CancellationException
 /**
  * Settings, pushed over the shell. Sections follow the plan's order (Playback, Content, Feed,
  * Appearance, Library, Privacy, About); a section appears once it has a real setting, so today that
- * is Content, Appearance and About. Back, including the predictive back gesture, shrinks the screen
- * toward the swiped edge before it leaves.
+ * is Content, Appearance, Library and About. Back, including the predictive back gesture, shrinks the
+ * screen toward the swiped edge before it leaves. Manage tags opens over it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: MainViewModel, snackbars: Snackbars, backup: BackupActions, onBack: () -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val library by vm.library.state.collectAsStateWithLifecycle()
     val diagnostics by Diagnostics.counts.collectAsStateWithLifecycle()
+    var manageTags by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val webView = remember { WebViewCompat.getCurrentWebViewPackage(context) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -81,8 +97,12 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     Scaffold(
         modifier = Modifier
             .predictiveBack(backProgress, backEdge)
-            .nestedScroll(scrollBehavior.nestedScrollConnection),
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
+            // Manage tags covers Settings; TalkBack must not reach the rows under it.
+            .then(if (manageTags) Modifier.clearAndSetSemantics {} else Modifier),
         topBar = { SubpageTopBar("Settings", onBack, scrollBehavior) },
+        // Settings covers the shell's snackbar, so undo and import notices show here while it is open.
+        snackbarHost = { SnackbarStack(snackbars) },
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         contentWindowInsets = WindowInsets.navigationBars,
     ) { padding ->
@@ -117,12 +137,64 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                     )
                 },
             )
+            Section(
+                "Library",
+                listOf(
+                    { shapes ->
+                        ActionRow(
+                            "Manage tags",
+                            SettingsModel.tagCount(library.tags.size),
+                            Icons.AutoMirrored.Outlined.Label,
+                            shapes,
+                            onClick = { manageTags = true },
+                        )
+                    },
+                    { shapes ->
+                        ActionRow(
+                            "Export library",
+                            "Save your library, tags, history and settings to a file",
+                            Icons.Outlined.FileUpload,
+                            shapes,
+                            onClick = backup.export,
+                        )
+                    },
+                    { shapes ->
+                        ActionRow(
+                            "Import library",
+                            "Merge an export into this library. Nothing here is removed.",
+                            Icons.Outlined.FileDownload,
+                            shapes,
+                            onClick = backup.import,
+                        )
+                    },
+                ),
+            )
             Section("About", aboutRows(webView, SettingsModel.diagnostics(diagnostics)))
         }
+    }
+
+    AnimatedVisibility(
+        visible = manageTags,
+        enter = slideInHorizontally(MaterialTheme.motionScheme.defaultSpatialSpec()) { it / 3 } + fadeIn(),
+        exit = slideOutHorizontally(MaterialTheme.motionScheme.fastSpatialSpec()) { it / 3 } + fadeOut(),
+    ) {
+        ManageTagsScreen(vm.library, onBack = { manageTags = false })
     }
 }
 
 private typealias SettingRow = @Composable (ListItemShapes) -> Unit
+
+/** A row that opens something or starts an action. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ActionRow(title: String, summary: String, icon: ImageVector, shapes: ListItemShapes, onClick: () -> Unit) {
+    SegmentedListItem(
+        onClick = onClick,
+        shapes = shapes,
+        leadingContent = { Icon(icon, contentDescription = null) },
+        supportingContent = { Text(summary) },
+    ) { Text(title) }
+}
 
 private fun aboutRows(webView: PackageInfo?, events: List<Pair<String, Int>>): List<SettingRow> {
     val version = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})" + if (BuildConfig.DEBUG) " debug" else ""

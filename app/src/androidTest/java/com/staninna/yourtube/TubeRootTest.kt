@@ -72,17 +72,17 @@ class TubeRootTest {
     }
 
     @Test fun coldLaunchWithSubsOpensFeeds() {
-        store.toggleStar(
+        store.star(
             StarredItem(
-                id = "UC1", type = ItemType.CHANNEL, title = "Example Channel",
+                id = "UC1", type = ItemType.CHANNEL, title = "Example Channel", thumbnail = "https://example.invalid/a.png",
                 url = "https://m.youtube.com/channel/UC1", channelId = "UC1",
             ),
         )
         setContent()
         tab("Feeds").assertIsSelected()
         tab("Library").performClick()
+        // Library opens on Subs, where the channel is.
         compose.onNodeWithText("Example Channel").assertIsDisplayed()
-        compose.onNodeWithText("Channel").assertIsDisplayed()
     }
 
     @Test fun tabsSwitchAndShowTheirScreens() {
@@ -112,7 +112,14 @@ class TubeRootTest {
         store.recordPlayback(PlaybackKind.PLAY, "VID1", 0.0, 0.0, VideoMeta("VID1", "A watched video", "Someone", null))
         setContent()
         tab("History").performClick()
+        // Clear all asks first; Cancel keeps everything.
         compose.onNodeWithContentDescription("Clear history").performClick()
+        compose.onNodeWithText("Clear all history?").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("A watched video").assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("Clear history").performClick()
+        compose.onNodeWithText("Clear").performClick()
         compose.onNodeWithText("No history yet").assertIsDisplayed()
         compose.onNodeWithText("Undo").performClick()
         compose.waitUntil(5_000) { store.history.value.isNotEmpty() }

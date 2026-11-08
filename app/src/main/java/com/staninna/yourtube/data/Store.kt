@@ -9,6 +9,8 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.util.UUID
 
@@ -46,36 +48,81 @@ class Store(
     /** Resolved channels keyed by channel page path (see `PageIdentity.Channel.path`). */
     val channels: StateFlow<Map<String, CachedChannel>> = channelsFile.state
 
-    /**
-     * Files that could not be read at startup; each was kept as `<name>.corrupt`. Stage 4 shows a
-     * one-time notice with an export action from this.
-     */
+    /** Files that could not be read at startup; each was kept as `<name>.corrupt`. */
     val corruptFiles: Set<String> = files.filter { it.loadResult == LoadResult.CORRUPT }.map { it.name }.toSet()
+
+    private val _corruptNotice = MutableStateFlow(corruptFiles.takeIf { it.isNotEmpty() })
+
+    /**
+     * [corruptFiles] until the user has answered the notice about them (dismissed it or exported). It
+     * outlives any one screen; the next process finds the files moved aside, so it shows once per damage.
+     */
+    val corruptNotice: StateFlow<Set<String>?> = _corruptNotice.asStateFlow()
 
     @Volatile private var pendingFlush: Job? = null
 
+    fun dismissCorruptNotice() {
+        _corruptNotice.value = null
+    }
+
     // --- library ---
 
-    /** Stars [item] (newest first, stamped now) or, when an item with its id is starred, unstars it. */
-    fun toggleStar(item: StarredItem) = libraryFile.update { lib ->
-        val starred = lib.items.any { it.id == item.id }
+    /** Stars [item], newest first and stamped now. An item already starred stays as it is. */
+    fun star(item: StarredItem) = libraryFile.update { lib ->
+        if (lib.items.any { it.id == item.id }) lib else lib.copy(items = listOf(item.copy(addedAt = now())) + lib.items)
+    }
+
+    fun unstar(itemId: String) = libraryFile.update { lib -> lib.copy(items = lib.items.filterNot { it.id == itemId }) }
+
+    /**
+     * Puts back [item] as it was before an unstar (Undo): its date and its tags that still exist. If it
+     * was starred again since, the newer star stays.
+     */
+    fun restoreStar(item: StarredItem) = libraryFile.update { lib ->
+        if (lib.items.any { it.id == item.id }) return@update lib
+        val known = lib.tags.map { it.id }.toSet()
+        lib.copy(items = (lib.items + item.copy(tagIds = item.tagIds intersect known)).sortedByDescending { it.addedAt })
+    }
+
+    /**
+     * Creates a tag named [name] with the next palette color, and attaches it to [attachTo] in the same
+     * write. A name already in the pool (ignoring case) reuses that tag. Null for a blank name.
+     */
+    fun createTag(name: String, attachTo: String? = null): Tag? {
+        val normalized = TagNames.normalize(name) ?: return null
+        val newId = UUID.randomUUID().toString()
+        var tag: Tag? = null
+        libraryFile.update { lib ->
+            // update {} may run this more than once; the last run is the one applied.
+            val t = TagNames.clash(normalized, lib.tags) ?: Tag(newId, normalized, TagPalette.next(lib.tags.size))
+            tag = t
+            lib.copy(
+                tags = if (t.id == newId) lib.tags + t else lib.tags,
+                items = lib.items.map { if (it.id == attachTo) it.copy(tagIds = it.tagIds + t.id) else it },
+            )
+        }
+        return tag
+    }
+
+    /** Attaches [tagId] to [itemId], or detaches it. An unknown tag is never attached. */
+    fun setItemTag(itemId: String, tagId: String, attached: Boolean) = libraryFile.update { lib ->
+        if (attached && lib.tags.none { it.id == tagId }) return@update lib
         lib.copy(
-            items = if (starred) lib.items.filterNot { it.id == item.id } else listOf(item.copy(addedAt = now())) + lib.items,
+            items = lib.items.map {
+                if (it.id != itemId) it else it.copy(tagIds = if (attached) it.tagIds + tagId else it.tagIds - tagId)
+            },
         )
     }
 
-    /** Creates a tag with the next palette color. */
-    fun createTag(name: String): Tag {
-        val id = UUID.randomUUID().toString()
-        libraryFile.update { lib ->
-            lib.copy(tags = lib.tags + Tag(id, name.trim(), TAG_COLORS[lib.tags.size % TAG_COLORS.size]))
-        }
-        return libraryFile.value.tags.first { it.id == id }
+    /** Renames a tag. A blank name, or one another tag has, changes nothing. */
+    fun renameTag(tagId: String, name: String) = libraryFile.update { lib ->
+        val normalized = TagNames.normalize(name)
+        if (normalized == null || TagNames.clash(normalized, lib.tags, exceptId = tagId) != null) return@update lib
+        lib.copy(tags = lib.tags.map { if (it.id == tagId) it.copy(name = normalized) else it })
     }
 
-    fun setItemTags(itemId: String, tagIds: Set<String>) = libraryFile.update { lib ->
-        val known = lib.tags.map { it.id }.toSet()
-        lib.copy(items = lib.items.map { if (it.id == itemId) it.copy(tagIds = tagIds intersect known) else it })
+    fun recolorTag(tagId: String, color: Int) = libraryFile.update { lib ->
+        lib.copy(tags = lib.tags.map { if (it.id == tagId) it.copy(color = color) else it })
     }
 
     /** Deletes a tag and detaches it from every item in the same write. Items stay starred. */
@@ -84,6 +131,34 @@ class Store(
             tags = lib.tags.filterNot { it.id == tagId },
             items = lib.items.map { if (tagId in it.tagIds) it.copy(tagIds = it.tagIds - tagId) else it },
         )
+    }
+
+    /** Gives the starred channel [channelId] its avatar, unless it already has one. */
+    fun setChannelAvatar(channelId: String, avatar: String) = libraryFile.update { lib ->
+        lib.copy(
+            items = lib.items.map {
+                if (it.type == ItemType.CHANNEL && it.id == channelId && it.thumbnail == null) it.copy(thumbnail = avatar) else it
+            },
+        )
+    }
+
+    // --- backup ---
+
+    /** Everything first-party as it stands now, including playback not yet written. */
+    fun backup(): Backup = Backup(exportedAt = now(), library = library.value, history = history.value, settings = settings.value)
+
+    /** Merges [backup] in per [BackupMerge]: one write per file, each atomic. */
+    fun import(backup: Backup): ImportReport {
+        // update {} may run a transform more than once; the last run is the one applied.
+        var lib: BackupMerge.LibraryResult? = null
+        libraryFile.update { current -> BackupMerge.library(current, backup.library).also { lib = it }.library }
+        var historyAdded = 0
+        historyFile.update { current ->
+            BackupMerge.history(current, backup.history, HISTORY_CAP).also { historyAdded = it.added }.history
+        }
+        settingsFile.update { backup.settings }
+        val merged = checkNotNull(lib)
+        return ImportReport(merged.itemsAdded, merged.itemsUpdated, merged.tagsAdded, historyAdded)
     }
 
     // --- playback: history with positions ---
@@ -135,8 +210,8 @@ class Store(
     fun clearHistory() = historyFile.update { emptyList() }
 
     /**
-     * Puts back [entries] taken before a clear (Undo). Videos watched since keep their newer entries;
-     * the result is newest first and capped like any history.
+     * Puts back [entries] taken before a clear or a removal (Undo), positions included. Videos watched
+     * since keep their newer entries; the result is newest first and capped like any history.
      */
     fun restoreHistory(entries: List<HistoryEntry>) = historyFile.update { current ->
         val kept = current.map { it.videoId }.toSet()
@@ -172,10 +247,5 @@ class Store(
     companion object {
         const val HISTORY_CAP = 2000
         const val PLAYBACK_FLUSH_MS = 10_000L
-
-        /** Material tonal reds, blues, greens and ambers; tags take them in turn. */
-        private val TAG_COLORS = listOf(
-            0xFFE57373, 0xFF64B5F6, 0xFF81C784, 0xFFFFB74D, 0xFFBA68C8, 0xFF4DB6AC, 0xFFF06292, 0xFFA1887F,
-        ).map { it.toInt() }
     }
 }

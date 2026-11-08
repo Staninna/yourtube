@@ -50,15 +50,15 @@ sealed interface PageIdentity {
             val query = queryParams(uri.rawQuery)
             val first = segments.firstOrNull() ?: return Other
             return when {
-                first == "watch" -> query["v"]?.takeIf(VIDEO_ID::matches)?.let { Video(it, null) }
+                first == "watch" -> query["v"]?.takeIf(YouTube.VIDEO_ID::matches)?.let { Video(it, null) }
                 first == "shorts" || first == "live" ->
-                    segments.getOrNull(1)?.takeIf(VIDEO_ID::matches)?.let { Video(it, null) }
+                    segments.getOrNull(1)?.takeIf(YouTube.VIDEO_ID::matches)?.let { Video(it, null) }
                 first == "channel" ->
-                    segments.getOrNull(1)?.takeIf(CHANNEL_ID::matches)?.let { Channel("/channel/$it", it, null) }
+                    segments.getOrNull(1)?.takeIf(YouTube.CHANNEL_ID::matches)?.let { Channel(channelPath(it), it, null) }
                 first.startsWith("@") && first.length > 1 -> Channel("/${first.lowercase()}", null, null)
                 first == "c" || first == "user" ->
                     segments.getOrNull(1)?.let { Channel("/$first/${it.lowercase()}", null, null) }
-                first == "playlist" -> query["list"]?.takeIf(PLAYLIST_ID::matches)?.let { Playlist(it, null) }
+                first == "playlist" -> query["list"]?.takeIf(YouTube.PLAYLIST_ID::matches)?.let { Playlist(it, null) }
                 else -> null
             } ?: Other
         }
@@ -92,10 +92,13 @@ sealed interface PageIdentity {
                 player.videoId != base.videoId ->
                     if (report.reason == PageReport.Reason.METADATA) "video.player-behind-url" else null
                 player.title.isNullOrBlank() -> "video.no-title"
-                player.channelId?.matches(CHANNEL_ID) != true -> "video.no-channel-id"
+                player.channelId?.matches(YouTube.CHANNEL_ID) != true -> "video.no-channel-id"
                 else -> null
             }
         }
+
+        /** The [Channel.path] of the channel with UC id [channelId]. */
+        fun channelPath(channelId: String): String = "/channel/$channelId"
 
         /** Two URLs name the same page when they differ at most in their fragment. */
         fun sameUrl(a: String, b: String?): Boolean = b != null && a.substringBefore('#') == b.substringBefore('#')
@@ -105,7 +108,7 @@ sealed interface PageIdentity {
             val title = player.title?.takeIf { it.isNotBlank() } ?: return null
             if (player.videoId != videoId) return null
             // The channel id is kept only when it has the UC shape; anything else is markup drift.
-            return VideoMeta(videoId, title, player.author, player.channelId?.takeIf(CHANNEL_ID::matches))
+            return VideoMeta(videoId, title, player.author, player.channelId?.takeIf(YouTube.CHANNEL_ID::matches))
         }
 
         private fun trustedTitle(base: PageIdentity, report: PageReport): String? {
@@ -132,9 +135,6 @@ sealed interface PageIdentity {
             s
         }
 
-        private val VIDEO_ID = Regex("[A-Za-z0-9_-]{11}")
-        private val CHANNEL_ID = Regex("UC[A-Za-z0-9_-]{22}")
-        private val PLAYLIST_ID = Regex("[A-Za-z0-9_-]{2,}")
     }
 }
 
