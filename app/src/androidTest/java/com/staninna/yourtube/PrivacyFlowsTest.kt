@@ -63,7 +63,7 @@ class PrivacyFlowsTest {
 
     @Test fun thePrivacySwitchHidesTheMask() {
         setContent()
-        compose.runOnUiThread { vm.selectTab(Tab.WATCH) }
+        compose.runOnUiThread { vm.open(YouTube.HOME) } // Watch's page; nothing loads, as no one collects opens
         compose.onNodeWithContentDescription("New identity").assertIsDisplayed()
 
         compose.onNodeWithContentDescription("More options").performClick()
@@ -75,14 +75,14 @@ class PrivacyFlowsTest {
         compose.waitUntil(5_000) { !store.settings.value.showNewIdentity }
         compose.onNodeWithContentDescription("Back").performClick()
 
-        compose.onNodeWithContentDescription("YouTube home").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Home").assertIsDisplayed()
         compose.onAllNodesWithContentDescription("New identity").assertCountEquals(0)
     }
 
     @Test fun theBotCheckBannerOffersANewIdentityEvenWithTheMaskHidden() {
         store.updateSettings { it.copy(showNewIdentity = false) }
         setContent()
-        compose.runOnUiThread { vm.selectTab(Tab.WATCH) }
+        compose.runOnUiThread { vm.open(YouTube.HOME) }
         compose.onAllNodesWithContentDescription("New identity").assertCountEquals(0)
 
         compose.runOnUiThread { vm.onNavigated("https://www.google.com/sorry/index?continue=https://m.youtube.com/") }

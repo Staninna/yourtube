@@ -42,6 +42,7 @@ import com.staninna.yourtube.MainViewModel
 import com.staninna.yourtube.Tab
 import com.staninna.yourtube.data.ItemType
 import com.staninna.yourtube.data.LibraryFilter
+import com.staninna.yourtube.data.LibrarySort
 import com.staninna.yourtube.data.LibraryView
 import com.staninna.yourtube.data.StarredItem
 import com.staninna.yourtube.data.WatchProgress
@@ -97,7 +98,7 @@ fun LibraryScreen(vm: MainViewModel, onSearch: () -> Unit, onSettings: () -> Uni
             )
             if (view.segmentSize > 0) {
                 TagFilterBar(view.tags, vm.library, segment.noun, Modifier.padding(top = 4.dp)) {
-                    SortButton(view.sort, vm.library::setSort)
+                    SortButton(view.sort, LibrarySort.offeredFor(view.segment), vm.library::setSort)
                 }
             }
             if (view.searchable) LibrarySearch(query, setQuery, segment.label.lowercase())

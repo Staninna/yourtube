@@ -136,12 +136,12 @@ class PipFlowsTest {
     @Test fun inPipOnlyTheVideoShowsAndTheShellComesBackAfter() {
         setContent()
         watch(playing = true)
-        compose.onNodeWithContentDescription("YouTube home").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Home").assertIsDisplayed()
         compose.runOnUiThread { hub.setPip(true) }
-        compose.onAllNodesWithContentDescription("YouTube home").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Home").assertCountEquals(0)
         compose.onAllNodesWithText("Library").assertCountEquals(0)
         compose.runOnUiThread { hub.setPip(false) }
-        compose.onNodeWithContentDescription("YouTube home").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Home").assertIsDisplayed()
         compose.onNodeWithText("Library").assertIsDisplayed()
     }
 

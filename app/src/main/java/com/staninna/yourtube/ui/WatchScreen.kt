@@ -72,9 +72,10 @@ fun watchBarColor(page: PageIdentity): Color =
     Color(YouTube.pageBackground(isSystemInDarkTheme() || page is PageIdentity.Video))
 
 /**
- * The Watch tab: YouTube in the WebView under a top bar colored like YouTube's own header, so the two
+ * Watch's page: YouTube in the WebView under a top bar colored like YouTube's own header, so the two
  * read as one surface. The bar has no title; it carries back, star, search, the new-identity mask
- * (unless Settings hides it), Home and the overflow. A bot check shows a banner under it.
+ * (unless Settings hides it), Home (Watch's home screen) and the overflow. A bot check shows a banner
+ * under it.
  * A thin line shows load progress, and a failed main-frame load shows a native error with Retry.
  * Without [chrome] (picture-in-picture) only the WebView shows.
  */
@@ -131,7 +132,7 @@ private fun WatchTopBar(
             if (settings.showNewIdentity) {
                 IconButton(onClick = vm::newIdentity) { Icon(Icons.Filled.TheaterComedy, "New identity") }
             }
-            IconButton(onClick = { vm.open(YouTube.HOME) }) { Icon(Icons.Filled.Home, "YouTube home") }
+            IconButton(onClick = vm::showHome) { Icon(Icons.Filled.Home, "Home") }
             OverflowMenu(
                 listOfNotNull(
                     nav.url?.let { url -> MenuEntry("Share", Icons.Filled.Share) { share(context, url, page.title) } },

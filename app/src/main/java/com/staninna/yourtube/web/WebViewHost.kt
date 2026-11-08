@@ -134,6 +134,12 @@ class WebViewHost(
     private var webView: TubeWebView? = null
     private var pendingUrl: String? = null
     private var requestedUrl: String? = null
+
+    /**
+     * The document [load] asked for drops the history before it once it commits. Until then the page
+     * reports no history, so Back during the load never walks the old one.
+     */
+    private var dropHistoryOnCommit = false
     private var appliedConfig: String = PageConfig.of(settings.value).toString()
 
     /** The theme the current identity's `PREF` cookie carries: seeded, then kept in step by [syncTheme]. */
@@ -171,11 +177,16 @@ class WebViewHost(
         if (identity === view.identity) identity = null
     }
 
-    /** Loads [url], or the watch page in its place when it is a Short and Shorts are removed. */
-    fun load(url: String) {
+    /**
+     * Loads [url], or the watch page in its place when it is a Short and Shorts are removed. With
+     * [freshHistory] the page becomes the first entry of the history once it commits, so Back from it
+     * has nothing to go back to.
+     */
+    fun load(url: String, freshHistory: Boolean = false) {
         val target = rewritten(url)
         requestedUrl = target
-        _nav.update { it.copy(error = null) }
+        dropHistoryOnCommit = freshHistory
+        _nav.update { it.copy(error = null, canGoBack = it.canGoBack && !freshHistory) }
         webView?.loadUrl(target) ?: run { pendingUrl = target }
     }
 
@@ -329,19 +340,25 @@ class WebViewHost(
 
         override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
             if (view !== webView) return
-            _nav.update { it.copy(url = url, canGoBack = view.canGoBack()) }
+            _nav.update { it.copy(url = url, canGoBack = canGoBack(view)) }
             listener.onNavigated(url)
         }
 
+        // Called when a new document commits, just before doUpdateVisitedHistory; never for an in-page
+        // (pushState) navigation, so the old page's own history updates cannot take the fresh start.
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
             if (view !== webView) return
+            if (dropHistoryOnCommit) {
+                dropHistoryOnCommit = false
+                view.clearHistory()
+            }
             _nav.update { it.copy(error = null) }
             scripts.onPageStarted(view, settings.value)
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
             if (view !== webView) return
-            _nav.update { it.copy(canGoBack = view.canGoBack()) }
+            _nav.update { it.copy(canGoBack = canGoBack(view)) }
             scripts.onPageFinished(view, settings.value)
         }
 
@@ -396,6 +413,9 @@ class WebViewHost(
             Log.w(TAG, "no app opens $url")
         }
     }
+
+    /** Whether Back has a page to go back to; not while a fresh load is still to commit. */
+    private fun canGoBack(view: WebView): Boolean = view.canGoBack() && !dropHistoryOnCommit
 
     private fun forgetCurrentView() {
         webView = null

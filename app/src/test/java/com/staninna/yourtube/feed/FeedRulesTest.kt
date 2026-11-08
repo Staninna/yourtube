@@ -57,6 +57,20 @@ class FeedRulesTest {
         assertEquals(mapOf("A" to "https://a.png"), v.avatars)
     }
 
+    @Test fun newestMergesEverySubscriptionAndKeepsTheNewestFew() {
+        assertEquals(listOf("a1", "b1"), FeedRules.newest(library, results, removeShorts = false, count = 2).map { it.videoId })
+        assertEquals(listOf("a1", "b1", "c1", "a2"), FeedRules.newest(library, results, removeShorts = false, count = 10).map { it.videoId })
+        val unsubscribed = library.copy(items = library.items.filterNot { it.id == "A" })
+        // B's feed lists a1 too, so it stays; a2 leaves with A.
+        assertEquals(listOf("a1", "b1", "c1"), FeedRules.newest(unsubscribed, results, removeShorts = false, count = 10).map { it.videoId })
+    }
+
+    @Test fun newestLeavesShortsOutWithRemoveShorts() {
+        val res = results.finish("C", ok(video("s1", "C", 60).copy(isShort = true), video("c1", "C", 30)))
+        assertEquals("s1", FeedRules.newest(library, res, removeShorts = false, count = 1).single().videoId)
+        assertEquals("a1", FeedRules.newest(library, res, removeShorts = true, count = 1).single().videoId)
+    }
+
     @Test fun anUnsubscribedChannelsVideosLeave() {
         val lib = library.copy(items = library.items.filterNot { it.id == "C" })
         assertEquals(listOf("a1", "b1", "a2"), view(lib = lib).videos.map { it.videoId })

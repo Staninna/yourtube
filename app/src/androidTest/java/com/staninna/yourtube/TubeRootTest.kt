@@ -110,10 +110,10 @@ class TubeRootTest {
         compose.onNodeWithText("No subscriptions yet").assertIsDisplayed()
         tab("Library").performClick()
         compose.onNodeWithText("Your library is empty").assertIsDisplayed()
-        // Watch shows the WebView: the native screens are gone and its top bar is up.
+        // Watch with nothing opened shows its home over the WebView.
         tab("Watch").performClick()
         tab("Watch").assertIsSelected()
-        compose.onNodeWithContentDescription("YouTube home").assertIsDisplayed()
+        compose.onNodeWithText("Welcome to YourTube").assertIsDisplayed()
         compose.onAllNodesWithText("Your library is empty").assertCountEquals(0)
     }
 
@@ -189,7 +189,7 @@ class TubeRootTest {
         compose.waitForIdle()
         tab("Watch").assertIsSelected()
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
-        compose.onNodeWithContentDescription("YouTube home").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Home").assertIsDisplayed()
     }
 
     @Test fun removeAllShortsSwitchIsStored() {
@@ -221,9 +221,9 @@ class TubeRootTest {
 
     @Test fun watchTopBarOffersSearchHomeAndOverflow() {
         setContent()
-        tab("Watch").performClick()
+        compose.runOnUiThread { vm.open("https://m.youtube.com/watch?v=dQw4w9WgXcQ") } // nothing loads: no one collects opens
         compose.onNode(hasContentDescription("Search YouTube")).assertIsDisplayed()
-        compose.onNode(hasContentDescription("YouTube home")).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Home")).assertIsDisplayed()
         compose.onNode(hasContentDescription("More options")).assertIsDisplayed()
             .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Role))
     }

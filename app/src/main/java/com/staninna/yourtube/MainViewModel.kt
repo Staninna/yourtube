@@ -3,6 +3,7 @@ package com.staninna.yourtube
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.staninna.yourtube.data.AdLayer
+import com.staninna.yourtube.data.ItemType
 import com.staninna.yourtube.data.Library
 import com.staninna.yourtube.data.PlayerPrefs
 import com.staninna.yourtube.data.SegmentAction
@@ -13,6 +14,7 @@ import com.staninna.yourtube.data.Store
 import com.staninna.yourtube.data.WatchProgress
 import com.staninna.yourtube.feed.FeedFetcher
 import com.staninna.yourtube.feed.FeedRules
+import com.staninna.yourtube.home.Dashboard
 import com.staninna.yourtube.page.ChannelResolver
 import com.staninna.yourtube.page.NowPlaying
 import com.staninna.yourtube.page.PageIdentity
@@ -35,13 +37,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.InputStream
 
@@ -61,8 +64,34 @@ class MainViewModel(
     /** Store files that were unreadable at startup, until the user answers the notice about them. */
     val corruptNotice: StateFlow<Set<String>?> = store.corruptNotice
 
-    private val _tab = MutableStateFlow(startTab(store.library.value))
-    val tab: StateFlow<Tab> = _tab.asStateFlow()
+    /**
+     * The tab, whether Watch shows its home over the page, and whether the page came as a link from
+     * another app ([fromLink]: Back at its first entry returns there): one value, so no reader sees half
+     * a switch.
+     */
+    private data class Shell(val tab: Tab, val home: Boolean, val fromLink: Boolean = false) {
+        val screen: Screen get() = Screen.of(tab, home)
+    }
+
+    private val shell = MutableStateFlow(Shell(startTab(store.library.value), home = true))
+
+    val tab: StateFlow<Tab> = shell.map { it.tab }.stateIn(viewModelScope, SharingStarted.Eagerly, shell.value.tab)
+
+    /**
+     * What the shell shows. Watch shows its home until something opens, and again after its Home button
+     * or Back at the page's first entry; the page stays loaded under it.
+     */
+    val screen: StateFlow<Screen> = shell.map { it.screen }.stateIn(viewModelScope, SharingStarted.Eagerly, shell.value.screen)
+
+    /**
+     * Where Back goes now, from the shell as it is at this moment (not as last drawn): the page's
+     * [canGoBack] and [pageLoaded] come from the WebView's live state. Null leaves the app.
+     */
+    fun backStep(canGoBack: Boolean, pageLoaded: Boolean): BackStep? =
+        shell.value.let { it.screen.back(canGoBack, pageLoaded, it.fromLink) }
+
+    /** Watch's page came as a link from another app and nothing else was opened since; see [Screen.back]. */
+    val fromLink: StateFlow<Boolean> = shell.map { it.fromLink }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val currentUrl = MutableStateFlow<String?>(null)
     private val lastReport = MutableStateFlow<PageReport?>(null)
@@ -102,11 +131,15 @@ class MainViewModel(
     /** One-off notices for the snackbar. */
     val events: Flow<UiEvent> = _events.receiveAsFlow()
 
-    /** Starring, tags and Library's view. */
-    val library = LibraryModel(store, channels, viewModelScope, starTarget, emit = { _events.trySend(it) })
-
     /** Feeds: subscribed channels' uploads, chips and paging. */
     val feeds = FeedsModel(store, feedFetcher, viewModelScope)
+
+    /** Starring, tags and Library's view; Feeds' newest uploads order Subs by latest upload. */
+    val library = LibraryModel(store, channels, viewModelScope, starTarget, emit = { _events.trySend(it) }, latestUploads = feeds.latestUploads)
+
+    /** Watch's home rows, from history, Feeds' newest uploads and the library. */
+    val dashboard: StateFlow<Dashboard> = combine(store.history, feeds.newest, store.library, Dashboard::of)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, Dashboard.of(store.history.value, feeds.newest.value, store.library.value))
 
     /** Picture-in-picture: mode, support, and Watch's menu entry. */
     val pip = PipModel(store, playback, playing, viewModelScope)
@@ -119,11 +152,10 @@ class MainViewModel(
 
     private val backups = BackupTransfer(store)
 
-    private val opens = Channel<String>(Channel.BUFFERED)
-    private var openedAnything = false
+    private val opens = Channel<OpenRequest>(Channel.BUFFERED)
 
     /** URLs the WebView should load, in order. */
-    val openRequests: Flow<String> = opens.receiveAsFlow()
+    val openRequests: Flow<OpenRequest> = opens.receiveAsFlow()
 
     private val identities = Channel<Unit>(Channel.CONFLATED)
 
@@ -138,14 +170,6 @@ class MainViewModel(
      * that way: a fresh identity would otherwise let YouTube start it muted.
      */
     private var viewerMuted = false
-
-    private val _backToStart = MutableStateFlow(false)
-
-    /**
-     * True after a new identity, until used: the page's history went with the old identity, so back at
-     * Watch's root goes to the start tab instead.
-     */
-    val backToStart: StateFlow<Boolean> = _backToStart.asStateFlow()
 
     /** Whether Watch shows a bot check, which only a new identity may get past. */
     val botCheck: StateFlow<Boolean> = combine(currentUrl, lastReport) { url, report ->
@@ -171,15 +195,31 @@ class MainViewModel(
         viewModelScope.launch { tab.collect { if (it != Tab.LIBRARY) library.selection.clear() } }
     }
 
-    /** Switches tabs. The Watch tab with nothing opened yet shows YouTube's home. */
-    fun selectTab(t: Tab) {
-        if (t == Tab.WATCH && !openedAnything) open(YouTube.HOME) else _tab.value = t
+    /**
+     * Switches tabs. Watch comes back as it was left, on its home or on its page; a link's page that was
+     * left for another tab is the app's own from then on, so Back at its root goes to the home.
+     */
+    fun selectTab(t: Tab) = shell.update { it.copy(tab = t, fromLink = it.fromLink && t == it.tab) }
+
+    /**
+     * Loads [url] in Watch and shows it. Over the home it starts a new page history, see [OpenRequest].
+     * A link from another app ([fromLink]) always does, so one Back at its first page returns to that app.
+     */
+    fun open(url: String, fromLink: Boolean = false) {
+        val overHome = shell.getAndUpdate { Shell(Tab.WATCH, home = false, fromLink = fromLink) }.home
+        opens.trySend(OpenRequest(url, freshHistory = overHome || fromLink))
     }
 
-    fun open(url: String) {
-        openedAnything = true
-        _tab.value = Tab.WATCH
-        opens.trySend(url)
+    /** Watch's home, over the page: from Watch's Home button, and Back at the page's first entry. */
+    fun showHome() = shell.update { Shell(Tab.WATCH, home = true) }
+
+    /** Watch's page again, as it was under the home: the now-playing bar's tap. */
+    fun showPage() = shell.update { Shell(Tab.WATCH, home = false) }
+
+    /** Library on its Videos segment: the home's Saved videos row's ›. */
+    fun openSavedVideos() {
+        library.selectSegment(ItemType.VIDEO)
+        selectTab(Tab.LIBRARY)
     }
 
     /**
@@ -188,15 +228,8 @@ class MainViewModel(
      */
     fun newIdentity() {
         carry = lastPlayback.value
-        _backToStart.value = true
         identities.trySend(Unit)
         _events.trySend(UiEvent.NewIdentity)
-    }
-
-    /** Back at Watch's root after a new identity: the start tab, once. */
-    fun goBackToStart() {
-        _backToStart.value = false
-        _tab.value = startTab(store.library.value)
     }
 
     /** Opens YouTube's results for [query] in Watch. Returns false, and does nothing, for a blank query. */

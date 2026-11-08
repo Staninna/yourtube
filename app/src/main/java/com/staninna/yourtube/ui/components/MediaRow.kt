@@ -109,26 +109,7 @@ fun MediaRow(
             if (text != null || subtitleLeading != null || subtitleEnd != null) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     subtitleLeading?.invoke()
-                    Row(Modifier.weight(1f)) {
-                        if (text != null) {
-                            Text(
-                                text,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false),
-                            )
-                        }
-                        subtitleEnd?.let {
-                            Text(
-                                if (text != null) " · $it" else it,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                            )
-                        }
-                    }
+                    SubtitleLine(text, subtitleEnd, Modifier.weight(1f))
                 }
             }
             detail?.let {
@@ -145,8 +126,37 @@ fun MediaRow(
     }
 }
 
+/**
+ * One line of [text] (ellipsized) then " · [end]", which a long [text] never cuts: History's "12 min
+ * left", a card's age. Either may be missing.
+ */
 @Composable
-private fun Thumbnail(thumb: MediaLeading.Thumbnail, modifier: Modifier) {
+internal fun SubtitleLine(text: String?, end: String?, modifier: Modifier = Modifier) {
+    Row(modifier) {
+        if (text != null) {
+            Text(
+                text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+        }
+        end?.let {
+            Text(
+                if (text != null) " · $it" else it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** A 16:9 still with its badge and watched bar, for [MediaRow] and [MediaCard]; [modifier] sets its width. */
+@Composable
+internal fun Thumbnail(thumb: MediaLeading.Thumbnail, modifier: Modifier) {
     val shape = MaterialTheme.shapes.medium
     Box(
         modifier
@@ -201,5 +211,6 @@ private val LEADING_WIDTH = 144.dp
 /** The app icon's purple, which also replaces YouTube's red progress bars in pages (PageConfig). */
 private val WATCHED_PURPLE = Color(0xFF7C3AED)
 
-private fun describe(progress: WatchProgress): String =
+/** What TalkBack hears about a still's watched bar. */
+internal fun describe(progress: WatchProgress): String =
     if (progress.finished) "Watched" else "${(progress.fraction * 100).roundToInt()}% watched"

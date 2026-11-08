@@ -35,6 +35,8 @@ class LibraryModel(
     private val scope: CoroutineScope,
     private val starTarget: StateFlow<StarredItem?>,
     private val emit: (UiEvent) -> Unit,
+    /** Each subscribed channel's newest upload time, by channel id, for the Latest upload sort. */
+    private val latestUploads: StateFlow<Map<String, Long>> = MutableStateFlow(emptyMap()),
 ) : TagFiltering {
     /** Every starred item and the tag pool. */
     val state: StateFlow<Library> = store.library
@@ -49,12 +51,17 @@ class LibraryModel(
     private val filters = MutableStateFlow<Map<ItemType, TagFilter>>(emptyMap())
     private val query = MutableStateFlow("")
 
-    val view: StateFlow<LibraryView> = combine(store.library, segment, filters, query, store.settings) { lib, seg, f, q, settings ->
-        LibraryFilter.view(lib, seg, f[seg] ?: TagFilter(), q, settings.librarySort)
+    private val order = combine(store.settings, latestUploads) { settings, uploads -> settings.librarySort to uploads }
+
+    val view: StateFlow<LibraryView> = combine(store.library, segment, filters, query, order) { lib, seg, f, q, (sort, uploads) ->
+        LibraryFilter.view(lib, seg, f[seg] ?: TagFilter(), q, sort, latestUploads = uploads)
     }.stateIn(
         scope,
         SharingStarted.Eagerly,
-        LibraryFilter.view(store.library.value, segment.value, TagFilter(), "", store.settings.value.librarySort),
+        LibraryFilter.view(
+            store.library.value, segment.value, TagFilter(), "", store.settings.value.librarySort,
+            latestUploads = latestUploads.value,
+        ),
     )
 
     /** Library's selection mode, over the rows [view] shows. */
@@ -166,7 +173,7 @@ class LibraryModel(
     override fun setTagMatch(match: TagMatch) = editFilter { it.copy(match = match) }
     override fun clearTagFilter() = editFilter { it.cleared() }
 
-    /** Stored, so the order survives restarts; every segment shares it. */
+    /** Stored, so the order survives restarts; every segment shares it (Latest upload applies in Subs only). */
     fun setSort(sort: LibrarySort) = store.updateSettings { it.copy(librarySort = sort) }
 
     /** Changes the current segment's filter, starting from the one in effect; each segment keeps its own. */

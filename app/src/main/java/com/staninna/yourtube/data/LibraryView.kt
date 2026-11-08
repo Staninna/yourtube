@@ -39,8 +39,9 @@ object LibraryFilter {
 
     /**
      * [filter] is the stored tag filter for [segment]; a choice that left the segment drops out of it
-     * (see [TagChoices.of]). [sort] orders the segment; by name it compares titles as [locale] does,
-     * ignoring case, and keeps equal titles newest first.
+     * (see [TagChoices.of]). [sort] orders the segment, as [LibrarySort.effective] allows there: by name
+     * it compares titles as [locale] does, ignoring case, and keeps equal titles newest first; by latest
+     * upload it reads each channel's newest upload time from [latestUploads] (by channel id).
      */
     fun view(
         library: Library,
@@ -49,13 +50,15 @@ object LibraryFilter {
         query: String,
         sort: LibrarySort = LibrarySort.RECENT,
         locale: Locale = Locale.getDefault(),
+        latestUploads: Map<String, Long> = emptyMap(),
     ): LibraryView {
-        val inSegment = sorted(library.items.filter { it.type == segment }, sort, locale)
+        val applied = LibrarySort.effective(sort, segment)
+        val inSegment = sorted(library.items.filter { it.type == segment }, applied, locale, latestUploads)
         val choices = TagChoices.of(inSegment, library.tags, filter)
         val searchable = inSegment.size > SEARCH_THRESHOLD
         val needle = query.trim().takeIf { searchable && it.isNotEmpty() }
         val items = inSegment.filter { item -> choices.filter.admits(item) && (needle == null || matches(item, needle)) }
-        return LibraryView(segment, items, choices, sort, inSegment.size, library.items.size, searchable, searching = needle != null)
+        return LibraryView(segment, items, choices, applied, inSegment.size, library.items.size, searchable, searching = needle != null)
     }
 
     /**
@@ -65,10 +68,12 @@ object LibraryFilter {
     fun inEffect(library: Library, segment: ItemType, stored: TagFilter): TagFilter =
         TagChoices.of(library.items.filter { it.type == segment }, library.tags, stored).filter
 
-    private fun sorted(items: List<StarredItem>, sort: LibrarySort, locale: Locale): List<StarredItem> {
+    private fun sorted(items: List<StarredItem>, sort: LibrarySort, locale: Locale, latestUploads: Map<String, Long>): List<StarredItem> {
         val newest = items.sortedByDescending { it.addedAt }
         return when (sort) {
             LibrarySort.RECENT -> newest
+            // Stable, so channels without a known upload keep newest starred first, after the others.
+            LibrarySort.LATEST_UPLOAD -> newest.sortedByDescending { latestUploads[it.id] ?: Long.MIN_VALUE }
             LibrarySort.NAME -> {
                 // SECONDARY ignores case but not accents; the sort is stable, so equal titles stay newest first.
                 val collator = Collator.getInstance(locale).apply { strength = Collator.SECONDARY }

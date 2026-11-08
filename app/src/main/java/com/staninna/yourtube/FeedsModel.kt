@@ -1,6 +1,7 @@
 package com.staninna.yourtube
 
 import com.staninna.yourtube.data.FeedPageSize
+import com.staninna.yourtube.data.FeedVideo
 import com.staninna.yourtube.data.Store
 import com.staninna.yourtube.data.TagFilter
 import com.staninna.yourtube.data.TagFiltering
@@ -13,6 +14,7 @@ import com.staninna.yourtube.feed.FeedRules
 import com.staninna.yourtube.feed.FeedSource
 import com.staninna.yourtube.feed.FeedView
 import com.staninna.yourtube.feed.FetchFailure
+import com.staninna.yourtube.home.Dashboard
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,6 +55,15 @@ class FeedsModel(
         scope,
         SharingStarted.Eagerly,
         store.settings.value.let { FeedRules.view(store.library.value, results.value, controls.value, it.feedPageSize, it.removeShorts) },
+    )
+
+    /** The newest uploads of all subscribed channels, tag filter aside, for the home screen's row. */
+    val newest: StateFlow<List<FeedVideo>> = combine(store.library, results, store.settings) { lib, res, settings ->
+        FeedRules.newest(lib, res, settings.removeShorts, Dashboard.ROW_SIZE)
+    }.stateIn(
+        scope,
+        SharingStarted.Eagerly,
+        FeedRules.newest(store.library.value, results.value, store.settings.value.removeShorts, Dashboard.ROW_SIZE),
     )
 
     /** Each channel's newest upload time, for Library's Subs rows. */

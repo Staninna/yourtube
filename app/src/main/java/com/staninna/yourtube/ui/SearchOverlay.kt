@@ -44,16 +44,17 @@ import androidx.compose.ui.unit.dp
 /**
  * Full-screen YouTube search: a focused field with the keyboard up, starting from the query of the
  * results page Watch shows (if any). Submitting hands the text to [onSearch], which loads the
- * results in Watch (the caller closes the overlay when a search happened); back closes it.
+ * results in Watch (the caller closes the overlay when a search happened); back closes it. Once
+ * [open] turns false the overlay only fades out, and Back is the shell's again.
  */
 @Composable
-fun SearchOverlay(initialQuery: String?, onSearch: (String) -> Unit, onDismiss: () -> Unit) {
+fun SearchOverlay(initialQuery: String?, open: Boolean, onSearch: (String) -> Unit, onDismiss: () -> Unit) {
     val start = initialQuery.orEmpty()
     // Selected, like a browser's address bar: typing replaces it, a tap on the field edits it.
     val text = rememberTextFieldState(start, TextRange(0, start.length))
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
-    BackHandler(onBack = onDismiss)
+    BackHandler(enabled = open, onBack = onDismiss)
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) {

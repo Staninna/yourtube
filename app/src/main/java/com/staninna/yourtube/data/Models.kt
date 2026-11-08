@@ -239,4 +239,21 @@ enum class LibrarySort {
 
     /** By title, A to Z in the device's language, ignoring case; equal titles newest first. */
     @SerialName("name") NAME,
+
+    /**
+     * Subs only: the channel whose newest upload (from Feeds) is most recent first; channels with no
+     * known upload follow, newest starred first. Elsewhere it orders as [RECENT].
+     */
+    @SerialName("upload") LATEST_UPLOAD,
+    ;
+
+    companion object {
+        /** The orders [segment]'s Sort menu offers. */
+        fun offeredFor(segment: ItemType): List<LibrarySort> =
+            if (segment == ItemType.CHANNEL) entries else listOf(RECENT, NAME)
+
+        /** [stored] as [segment] can apply it: Latest upload falls back to Recently added outside Subs. */
+        fun effective(stored: LibrarySort, segment: ItemType): LibrarySort =
+            if (stored in offeredFor(segment)) stored else RECENT
+    }
 }

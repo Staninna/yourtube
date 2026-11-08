@@ -187,9 +187,9 @@ private fun TagFilterSheet(choices: TagChoices, filtering: TagFiltering, noun: N
     }
 }
 
-/** Library's order as a chip with a small menu: Recently added or Name A to Z. */
+/** Library's order as a chip with a small menu of [options]: Recently added, Name A to Z, and in Subs Latest upload. */
 @Composable
-fun SortButton(sort: LibrarySort, onSort: (LibrarySort) -> Unit) {
+fun SortButton(sort: LibrarySort, options: List<LibrarySort>, onSort: (LibrarySort) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         AssistChip(
@@ -199,7 +199,7 @@ fun SortButton(sort: LibrarySort, onSort: (LibrarySort) -> Unit) {
             modifier = Modifier.semantics { contentDescription = "Sort: ${sortLabel(sort)}" },
         )
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, shape = MaterialTheme.shapes.large) {
-            LibrarySort.entries.forEach { option ->
+            options.forEach { option ->
                 val chosen = option == sort
                 DropdownMenuItem(
                     text = { Text(sortLabel(option)) },
@@ -221,4 +221,5 @@ fun SortButton(sort: LibrarySort, onSort: (LibrarySort) -> Unit) {
 fun sortLabel(sort: LibrarySort): String = when (sort) {
     LibrarySort.RECENT -> "Recently added"
     LibrarySort.NAME -> "Name A to Z"
+    LibrarySort.LATEST_UPLOAD -> "Latest upload"
 }

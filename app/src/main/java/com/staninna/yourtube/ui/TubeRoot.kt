@@ -51,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
@@ -60,7 +61,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.staninna.yourtube.BackStep
 import com.staninna.yourtube.MainViewModel
+import com.staninna.yourtube.Screen
 import com.staninna.yourtube.Tab
 import com.staninna.yourtube.UiEvent
 import com.staninna.yourtube.YouTube
@@ -71,12 +74,14 @@ import kotlinx.coroutines.flow.collectLatest
 
 /**
  * The app shell. Watch (the WebView) is always composed at the bottom so playback never stops; the
- * native tabs lie over it with the now-playing bar, the navigation bar runs along the bottom, and
- * Settings and search cover everything when open. In picture-in-picture only Watch's page shows.
+ * native screens (Watch's home and the other tabs) lie over it with the now-playing bar, the
+ * navigation bar runs along the bottom, and Settings and search cover everything when open. In
+ * picture-in-picture only Watch's page shows.
  */
 @Composable
 fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
     val tab by vm.tab.collectAsStateWithLifecycle()
+    val screen by vm.screen.collectAsStateWithLifecycle()
     val nav by host.nav.collectAsStateWithLifecycle()
     val page by vm.page.collectAsStateWithLifecycle()
     val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
@@ -84,7 +89,7 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     val overlayOpen = settingsOpen || searchOpen
     val inPip by vm.pip.inPip.collectAsStateWithLifecycle()
-    val watchShown = tab == Tab.WATCH && !overlayOpen
+    val watchShown = screen == Screen.PAGE && !overlayOpen
     LaunchedEffect(watchShown) { vm.pip.setWatchShown(watchShown) }
     val snackbars = remember { Snackbars(SnackbarHostState(), SnackbarHostState()) }
     val backup = rememberBackupActions(vm)
@@ -119,21 +124,27 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
         vm.dismissCorruptNotice()
     }
 
-    // Native tabs go back to Watch once it has something; Watch goes back through the page's history,
-    // and after a new identity, whose page has none, to the start tab.
-    val backToStart by vm.backToStart.collectAsStateWithLifecycle()
-    BackHandler(enabled = !overlayOpen && if (tab == Tab.WATCH) nav.canGoBack || backToStart else nav.url != null) {
-        when {
-            tab != Tab.WATCH -> vm.selectTab(Tab.WATCH)
-            nav.canGoBack -> host.goBack()
-            else -> vm.goBackToStart()
+    // Settings and search handle their own Back; with no step, Back leaves the app (see Screen.back).
+    val fromLink by vm.fromLink.collectAsStateWithLifecycle()
+    val back = screen.back(canGoBack = nav.canGoBack, pageLoaded = nav.url != null, fromLink = fromLink)
+    val activity = LocalContext.current as? Activity
+    BackHandler(enabled = !overlayOpen && back != null) {
+        // Decided at the press from the live state, not the drawn one: a page that just gained or lost
+        // its history (a load in progress) may not have redrawn yet, and the drawn step would skip or
+        // swallow a page. A press that finds no step left leaves the app, as the system Back would.
+        val live = host.nav.value
+        when (vm.backStep(canGoBack = live.canGoBack, pageLoaded = live.url != null)) {
+            BackStep.PAGE_HISTORY -> host.goBack()
+            BackStep.HOME -> vm.showHome()
+            BackStep.WATCH -> vm.selectTab(Tab.WATCH)
+            null -> activity?.moveTaskToBack(true)
         }
     }
 
     val watchBar = watchBarColor(page)
     val surfaceIsLight = !isSystemInDarkTheme()
     SystemBarIcons(
-        lightStatusBar = if (tab == Tab.WATCH && !overlayOpen) watchBar.luminance() > 0.5f else surfaceIsLight,
+        lightStatusBar = if (watchShown) watchBar.luminance() > 0.5f else surfaceIsLight,
         lightNavigationBar = surfaceIsLight,
     )
 
@@ -151,8 +162,8 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
             bottomBar = { if (!inPip) TubeNavigationBar(tab, vm::selectTab) },
             // While Settings is open its own host shows the notices.
             snackbarHost = {
-                // Watch hides the native tabs, so the bar's last measured height is stale there.
-                val lift = with(LocalDensity.current) { (if (tab != Tab.WATCH) nowPlayingHeight else 0).toDp() }
+                // Watch's page hides the native screens, so the bar's last measured height is stale there.
+                val lift = with(LocalDensity.current) { (if (screen != Screen.PAGE) nowPlayingHeight else 0).toDp() }
                 if (!settingsOpen && !inPip) SnackbarStack(snackbars, Modifier.padding(bottom = lift))
             },
             contentWindowInsets = WindowInsets(0),
@@ -164,9 +175,9 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
                     chrome = !inPip,
                     onSearch = openSearch,
                     onSettings = openSettings,
-                    modifier = if (tab != Tab.WATCH) Modifier.clearAndSetSemantics {} else Modifier,
+                    modifier = if (screen != Screen.PAGE) Modifier.clearAndSetSemantics {} else Modifier,
                 )
-                if (!inPip) NativeTabs(tab, vm, nowPlaying, openSearch, openSettings, overlayOpen) { nowPlayingHeight = it }
+                if (!inPip) NativeScreens(screen, vm, nowPlaying, openSearch, openSettings, overlayOpen) { nowPlayingHeight = it }
             }
         }
         AnimatedVisibility(
@@ -178,7 +189,9 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
         }
         AnimatedVisibility(visible = searchOpen, enter = fadeIn(), exit = fadeOut()) {
             SearchOverlay(
-                initialQuery = YouTube.searchQuery(nav.url),
+                // From the home or a native tab, not the query of a page nobody sees.
+                initialQuery = YouTube.searchQuery(nav.url).takeIf { screen == Screen.PAGE },
+                open = searchOpen,
                 onSearch = { if (vm.search(it)) closeSearch() },
                 onDismiss = closeSearch,
             )
@@ -192,10 +205,10 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
     }
 }
 
-/** Feeds, Library and History over Watch, with the now-playing bar under them. */
+/** Watch's home, Feeds, Library and History over Watch's page, with the now-playing bar under them. */
 @Composable
-private fun NativeTabs(
-    tab: Tab,
+private fun NativeScreens(
+    screen: Screen,
     vm: MainViewModel,
     nowPlaying: NowPlaying?,
     onSearch: () -> Unit,
@@ -205,34 +218,35 @@ private fun NativeTabs(
 ) {
     val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
     val spatial = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
-    AnimatedVisibility(tab != Tab.WATCH, enter = fadeIn(effects), exit = fadeOut(effects)) {
+    AnimatedVisibility(screen != Screen.PAGE, enter = fadeIn(effects), exit = fadeOut(effects)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             // Lists and the bar keep clear of a camera cutout at the side in landscape.
             Column(Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
                 // Fade through: the new tab fades in while growing slightly, the old one just fades.
                 AnimatedContent(
-                    targetState = tab,
+                    targetState = screen,
                     transitionSpec = { (fadeIn(effects) + scaleIn(spatial, initialScale = 0.96f)) togetherWith fadeOut(effects) },
                     modifier = Modifier.weight(1f),
                     label = "tab",
                 ) { shown ->
                     when (shown) {
-                        Tab.FEEDS -> FeedsScreen(vm, onSearch, onSettings)
-                        Tab.LIBRARY -> LibraryScreen(vm, onSearch, onSettings)
-                        Tab.HISTORY -> HistoryScreen(vm, onSearch, onSettings)
-                        // Leaving for Watch: keep the last frame blank while the layer fades.
-                        Tab.WATCH -> Box(Modifier.fillMaxSize())
+                        Screen.HOME -> HomeScreen(vm, onSearch, onSettings)
+                        Screen.FEEDS -> FeedsScreen(vm, onSearch, onSettings)
+                        Screen.LIBRARY -> LibraryScreen(vm, onSearch, onSettings)
+                        Screen.HISTORY -> HistoryScreen(vm, onSearch, onSettings)
+                        // Leaving for the page: keep the last frame blank while the layer fades.
+                        Screen.PAGE -> Box(Modifier.fillMaxSize())
                     }
                 }
                 // Measured around the bar, since a hidden AnimatedVisibility leaves no node to report its 0 height.
                 Column(Modifier.onSizeChanged { onNowPlayingHeight(it.height) }) {
                     AnimatedVisibility(
-                        // Native tabs only: Watch shows the video itself, and Settings and search cover the shell.
-                        visible = nowPlaying != null && tab != Tab.WATCH && !overlayOpen,
+                        // Native screens only: the page shows the video itself, and Settings and search cover the shell.
+                        visible = nowPlaying != null && screen != Screen.PAGE && !overlayOpen,
                         enter = expandVertically() + fadeIn(),
                         exit = shrinkVertically() + fadeOut(),
                     ) {
-                        nowPlaying?.let { NowPlayingBar(it, onOpen = { vm.selectTab(Tab.WATCH) }, onPlayPause = vm::playPause) }
+                        nowPlaying?.let { NowPlayingBar(it, onOpen = vm::showPage, onPlayPause = vm::playPause) }
                     }
                 }
             }

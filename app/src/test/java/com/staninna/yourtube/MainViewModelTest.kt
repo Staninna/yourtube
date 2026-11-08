@@ -57,12 +57,20 @@ class MainViewModelTest {
     private val noFeeds = FeedFetcher { _, _ -> ChannelFetch.Ok(emptyList(), FeedSource.RSS) }
     private val noSegments = SegmentSource { _, _ -> emptyList() }
 
+    /** Every request also lands in [requests], with whether it starts a fresh history. */
+    private val requests = Channel<OpenRequest>(Channel.UNLIMITED)
+
     private fun TestScope.viewModel(): Pair<MainViewModel, Channel<String>> {
         store = Store(tmp.root, backgroundScope)
         hub = PlaybackHub(backgroundScope, now = { testScheduler.currentTime }, startService = {})
         val vm = MainViewModel(store, ChannelResolver(store, backgroundScope), noFeeds, noSegments, hub)
         val opened = Channel<String>(Channel.UNLIMITED)
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.openRequests.collect { opened.send(it) } }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            vm.openRequests.collect {
+                opened.send(it.url)
+                requests.send(it)
+            }
+        }
         return vm to opened
     }
 
@@ -74,15 +82,102 @@ class MainViewModelTest {
         assertEquals(Tab.LIBRARY, MainViewModel.startTab(Library(items = listOf(item(ItemType.VIDEO)))))
     }
 
-    @Test fun watchTabWithNothingOpenedLoadsHome() = runTest {
+    @Test fun watchTabWithNothingOpenedShowsTheHomeAndLoadsNothing() = runTest {
         val (vm, opened) = viewModel()
+        assertEquals(Screen.LIBRARY, vm.screen.value)
         vm.selectTab(Tab.WATCH)
         assertEquals(Tab.WATCH, vm.tab.value)
-        assertEquals(YouTube.HOME, opened.tryReceive().getOrNull())
+        assertEquals(Screen.HOME, vm.screen.value)
+        assertTrue(opened.tryReceive().isFailure)
+    }
 
+    @Test fun openingFromTheHomeStartsAFreshHistoryAndOpeningOverAPageDoesNot() = runTest {
+        val (vm, _) = viewModel()
+        vm.selectTab(Tab.WATCH)
+        vm.open("https://m.youtube.com/watch?v=$video")
+        assertEquals(Screen.PAGE, vm.screen.value)
+        assertEquals(OpenRequest("https://m.youtube.com/watch?v=$video", freshHistory = true), requests.tryReceive().getOrNull())
+
+        vm.open("https://m.youtube.com/@RickAstleyYT")
+        assertEquals(false, requests.tryReceive().getOrNull()?.freshHistory)
+
+        // A deep link or a native tab's row while Watch is on its home opens over the home too.
+        vm.showHome()
+        vm.selectTab(Tab.HISTORY)
+        vm.open("https://m.youtube.com/watch?v=rL0qEmTRI-I")
+        assertEquals(true, requests.tryReceive().getOrNull()?.freshHistory)
+    }
+
+    @Test fun homeStaysOverThePageUntilThePageIsAskedFor() = runTest {
+        val (vm, opened) = viewModel()
+        vm.open("https://m.youtube.com/watch?v=$video")
+        opened.tryReceive()
+        vm.showHome()
+        assertEquals(Screen.HOME, vm.screen.value)
+        vm.selectTab(Tab.FEEDS)
+        vm.selectTab(Tab.WATCH)
+        assertEquals("Watch comes back on its home", Screen.HOME, vm.screen.value)
+        vm.showPage()
+        assertEquals(Screen.PAGE, vm.screen.value)
         vm.selectTab(Tab.HISTORY)
         vm.selectTab(Tab.WATCH)
-        assertTrue("home loads once", opened.tryReceive().isFailure)
+        assertEquals(Screen.PAGE, vm.screen.value)
+        assertTrue("nothing reloads", opened.tryReceive().isFailure)
+    }
+
+    @Test fun savedVideosOpenLibraryOnItsVideos() = runTest {
+        val (vm, _) = viewModel()
+        vm.selectTab(Tab.WATCH)
+        vm.openSavedVideos()
+        assertEquals(Screen.LIBRARY, vm.screen.value)
+        assertEquals(ItemType.VIDEO, vm.library.view.value.segment)
+    }
+
+    @Test fun theDashboardFollowsHistoryAndTheLibrary() = runTest {
+        val (vm, _) = viewModel()
+        assertTrue(vm.dashboard.value.empty)
+        store.recordPlayback(PlaybackKind.TIME, video, 90.0, 212.0, null)
+        store.star(StarredItem("v", ItemType.VIDEO, "V", url = "u"))
+        assertEquals(listOf(video), vm.dashboard.value.continueWatching.map { it.videoId })
+        assertEquals(listOf("v"), vm.dashboard.value.saved.map { it.id })
+    }
+
+    @Test fun aLinkFromAnotherAppStartsFreshAndKeepsItsFlagUntilTheUserMovesOn() = runTest {
+        val (vm, _) = viewModel()
+        vm.open("https://m.youtube.com/watch?v=dQw4w9WgXcQ")
+        assertTrue("over the home it starts fresh", requests.tryReceive().getOrThrow().freshHistory)
+        vm.open("https://m.youtube.com/watch?v=aircAruvnKk")
+        assertFalse("a page over a page keeps the history", requests.tryReceive().getOrThrow().freshHistory)
+        assertFalse(vm.fromLink.value)
+
+        vm.open("https://m.youtube.com/watch?v=jNQXAC9IVRw", fromLink = true)
+        assertTrue("a link always starts fresh", requests.tryReceive().getOrThrow().freshHistory)
+        assertTrue(vm.fromLink.value)
+        assertEquals(Screen.PAGE, vm.screen.value)
+
+        vm.selectTab(Tab.WATCH)
+        assertTrue("staying on Watch keeps it", vm.fromLink.value)
+        vm.selectTab(Tab.FEEDS)
+        vm.selectTab(Tab.WATCH)
+        assertFalse("another tab makes the page the app's own", vm.fromLink.value)
+
+        vm.open("https://m.youtube.com/watch?v=jNQXAC9IVRw", fromLink = true)
+        vm.showHome()
+        assertFalse(vm.fromLink.value)
+        vm.open("https://m.youtube.com/watch?v=jNQXAC9IVRw", fromLink = true)
+        vm.open("https://m.youtube.com/results?search_query=x")
+        assertFalse("opening something else in the app ends it", vm.fromLink.value)
+    }
+
+    @Test fun backIsDecidedFromTheShellAsItIsNow() = runTest {
+        val (vm, _) = viewModel()
+        vm.open("https://m.youtube.com/watch?v=jNQXAC9IVRw", fromLink = true)
+        assertNull("a link's first page leaves the app", vm.backStep(canGoBack = false, pageLoaded = true))
+        assertEquals(BackStep.PAGE_HISTORY, vm.backStep(canGoBack = true, pageLoaded = true))
+        vm.open("https://m.youtube.com/watch?v=dQw4w9WgXcQ")
+        assertEquals("with no history yet the root is the home", BackStep.HOME, vm.backStep(canGoBack = false, pageLoaded = true))
+        vm.showHome()
+        assertNull(vm.backStep(canGoBack = true, pageLoaded = true))
     }
 
     @Test fun leavingLibraryEndsSelectionMode() = runTest {
@@ -335,15 +430,11 @@ class MainViewModelTest {
         assertFalse(vm.resume(video).muted)
     }
 
-    @Test fun backAtWatchsRootAfterANewIdentityGoesToTheStartTabOnce() = runTest {
+    @Test fun aNewIdentityKeepsWatchOnItsPage() = runTest {
         val (vm, _) = viewModel()
         vm.open("https://m.youtube.com/watch?v=$video")
-        assertFalse(vm.backToStart.value)
         vm.newIdentity()
-        assertTrue(vm.backToStart.value)
-        vm.goBackToStart()
-        assertEquals(Tab.LIBRARY, vm.tab.value)
-        assertFalse(vm.backToStart.value)
+        assertEquals(Screen.PAGE, vm.screen.value)
     }
 
     @Test fun botChecksShowByAddressOrByTheRefusedPlayerAndAreCounted() = runTest {

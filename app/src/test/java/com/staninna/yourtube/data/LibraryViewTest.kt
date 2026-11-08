@@ -100,6 +100,24 @@ class LibraryViewTest {
         assertEquals(listOf("banana", "apple2", "apple1", "emile", "eve", "zed"), ids(recent))
     }
 
+    @Test fun latestUploadPutsTheFreshestChannelFirstAndUnknownsLast() {
+        fun channel(id: String, at: Long) = StarredItem(id, ItemType.CHANNEL, id, url = "u", channelId = id, addedAt = at)
+        val lib = Library(listOf(channel("old", 1), channel("quiet", 2), channel("busy", 3), channel("new", 4), channel("unknown", 5)))
+        val uploads = mapOf("old" to 900L, "busy" to 1_000L, "quiet" to 100L, "new" to 500L)
+        val subs = LibraryFilter.view(lib, ItemType.CHANNEL, TagFilter(), "", LibrarySort.LATEST_UPLOAD, Locale.ENGLISH, uploads)
+        assertEquals(listOf("busy", "old", "new", "quiet", "unknown"), ids(subs))
+        assertEquals(LibrarySort.LATEST_UPLOAD, subs.sort)
+    }
+
+    @Test fun latestUploadIsOfferedInSubsOnlyAndFallsBackElsewhere() {
+        assertEquals(LibrarySort.entries, LibrarySort.offeredFor(ItemType.CHANNEL))
+        assertEquals(listOf(LibrarySort.RECENT, LibrarySort.NAME), LibrarySort.offeredFor(ItemType.VIDEO))
+        val videos = LibraryFilter.view(library, ItemType.VIDEO, TagFilter(), "", LibrarySort.LATEST_UPLOAD, Locale.ENGLISH)
+        assertEquals("Recently added order", listOf("v2", "v3", "v1"), ids(videos))
+        assertEquals(LibrarySort.RECENT, videos.sort)
+        assertEquals(LibrarySort.NAME, LibrarySort.effective(LibrarySort.NAME, ItemType.PLAYLIST))
+    }
+
     @Test fun theSortOrdersTheFilteredRows() {
         val byName = LibraryFilter.view(library, ItemType.VIDEO, TagFilter(setOf("music", "talks")), "", LibrarySort.NAME, Locale.ENGLISH)
         assertEquals(listOf("v1", "v2"), ids(byName))

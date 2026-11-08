@@ -1,8 +1,10 @@
 package com.staninna.yourtube.ui.components
 
 import androidx.compose.foundation.gestures.ScrollableState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material.icons.Icons
@@ -28,23 +30,27 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.dp
 
 /** An entry of an [OverflowMenu]. */
 data class MenuEntry(val label: String, val icon: ImageVector, val onClick: () -> Unit)
 
 /**
- * A native tab's frame: a top bar with an emphasized title, the tab's own [actions], search and the
- * overflow menu (Settings). The bar tints as content scrolls under it.
+ * A native screen's frame: a top bar with an emphasized title (after [titleIcon], if any), the
+ * screen's own [actions], search (unless [onSearch] is null, for a screen with its own search field)
+ * and the overflow menu (Settings). The bar tints as content scrolls under it.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun TabScaffold(
     title: String,
-    onSearch: () -> Unit,
+    onSearch: (() -> Unit)?,
     onSettings: () -> Unit,
+    titleIcon: (@Composable () -> Unit)? = null,
     actions: @Composable () -> Unit = {},
     /**
      * The content's scroll position, for a screen whose list moves without a scroll gesture (a fresh
@@ -68,10 +74,15 @@ fun TabScaffold(
                 contextualBar()
             } else {
                 TopAppBar(
-                    title = { Text(title, style = MaterialTheme.typography.titleLargeEmphasized) },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            titleIcon?.invoke()
+                            Text(title, style = MaterialTheme.typography.titleLargeEmphasized)
+                        }
+                    },
                     actions = {
                         actions()
-                        SearchAction(onSearch)
+                        onSearch?.let { SearchAction(it) }
                         OverflowMenu(listOf(MenuEntry("Settings", Icons.Filled.Settings, onSettings)))
                     },
                     scrollBehavior = scrollBehavior,

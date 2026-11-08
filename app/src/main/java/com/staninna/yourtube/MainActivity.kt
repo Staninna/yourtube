@@ -25,8 +25,9 @@ import kotlinx.coroutines.launch
 
 /**
  * The one screen. Each creation is a launch with a new identity (D2): a cold start opens Feeds or
- * Library and loads nothing; after process death, or a process restart for a new identity, it
- * reloads the last URL. A YouTube link from another app opens in Watch.
+ * Library and loads nothing, and Watch shows its home until something opens; after process death, or
+ * a process restart for a new identity, it reloads the last URL. A YouTube link from another app opens
+ * in Watch.
  */
 class MainActivity : ComponentActivity() {
 
@@ -48,7 +49,7 @@ class MainActivity : ComponentActivity() {
         (savedInstanceState?.getString(KEY_URL) ?: consumeRestartUrl())?.let(vm::open)
         // A recreated Activity has opened its link before.
         if (savedInstanceState == null) openLink(intent)
-        lifecycleScope.launch { vm.openRequests.collect(host::load) }
+        lifecycleScope.launch { vm.openRequests.collect { host.load(it.url, it.freshHistory) } }
         lifecycleScope.launch { vm.identityRequests.collect { host.reroll() } }
         lifecycleScope.launch { vm.pagePushes.collect(host::post) }
         app.playback.attach(page)
@@ -101,7 +102,7 @@ class MainActivity : ComponentActivity() {
     private fun openLink(intent: Intent) {
         // Shared text may be styled; a CharSequence extra reads as null through getStringExtra.
         val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
-        DeepLinks.fromIntent(intent.action, intent.flags, intent.dataString, text)?.let(vm::open)
+        DeepLinks.fromIntent(intent.action, intent.flags, intent.dataString, text)?.let { vm.open(it, fromLink = true) }
     }
 
     override fun onDestroy() {

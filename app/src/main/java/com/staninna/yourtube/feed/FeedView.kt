@@ -148,10 +148,7 @@ object FeedRules {
     fun view(library: Library, results: FeedResults, controls: FeedControls, pageSize: FeedPageSize, removeShorts: Boolean): FeedView {
         val subs = subscriptions(library)
         val chipView = LibraryFilter.view(library, ItemType.CHANNEL, controls.filter, query = "")
-        val shown = chipView.items.flatMap { channel -> results.channels[channel.id]?.videos.orEmpty().map { named(it, channel) } }
-            .filterNot { removeShorts && it.isShort }
-            .distinctBy { it.videoId }
-            .sortedByDescending { it.publishedAt }
+        val shown = merged(chipView.items, results, removeShorts)
         val failed = chipView.items.filter { results.channels[it.id]?.failure != null }
         val failures = failed.mapNotNull { results.channels[it.id]?.failure }
         return FeedView(
@@ -171,6 +168,20 @@ object FeedRules {
             pageSize = pageSize,
         )
     }
+
+    /**
+     * The [count] newest uploads of every subscribed channel, whatever Feeds' tag filter is: the home
+     * screen's row. Shorts are left out with [removeShorts], as in Feeds.
+     */
+    fun newest(library: Library, results: FeedResults, removeShorts: Boolean, count: Int): List<FeedVideo> =
+        merged(library.items.filter { it.type == ItemType.CHANNEL }, results, removeShorts).take(count)
+
+    /** [channels]' uploads in [results], newest first, each video once; without Shorts when [removeShorts]. */
+    private fun merged(channels: List<StarredItem>, results: FeedResults, removeShorts: Boolean): List<FeedVideo> =
+        channels.flatMap { channel -> results.channels[channel.id]?.videos.orEmpty().map { named(it, channel) } }
+            .filterNot { removeShorts && it.isShort }
+            .distinctBy { it.videoId }
+            .sortedByDescending { it.publishedAt }
 
     /**
      * Each channel's newest upload time in [results], for Library's Subs rows; with [removeShorts] a

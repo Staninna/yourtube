@@ -38,10 +38,12 @@ class LibraryModelTest {
     private val target = MutableStateFlow<StarredItem?>(null)
     private val events = mutableListOf<UiEvent>()
 
+    private val uploads = MutableStateFlow<Map<String, Long>>(emptyMap())
+
     private fun TestScope.model(fetch: suspend (String) -> String? = { null }): LibraryModel {
         store = Store(tmp.root, backgroundScope)
         val scope = CoroutineScope(backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler))
-        return LibraryModel(store, ChannelResolver(store, backgroundScope, fetch), scope, target, emit = { events += it })
+        return LibraryModel(store, ChannelResolver(store, backgroundScope, fetch), scope, target, emit = { events += it }, latestUploads = uploads)
     }
 
     @Test fun starringOpensTheTagSheetAndDismissingKeepsTheStar() = runTest {
@@ -276,6 +278,20 @@ class LibraryModelTest {
         model.setSort(LibrarySort.NAME)
         assertEquals(LibrarySort.NAME, store.settings.value.librarySort)
         assertEquals(listOf("a", "b", "c"), model.view.value.items.map { it.id })
+    }
+
+    @Test fun latestUploadOrdersSubsAndFollowsNewUploads() = runTest {
+        val model = model()
+        listOf("A", "B", "C").forEach { store.star(StarredItem(it, ItemType.CHANNEL, it, url = "u", channelId = it, thumbnail = "https://a")) }
+        model.selectSegment(ItemType.CHANNEL)
+        model.setSort(LibrarySort.LATEST_UPLOAD)
+        uploads.value = mapOf("A" to 300L, "B" to 100L)
+        assertEquals(listOf("A", "B", "C"), model.view.value.items.map { it.id })
+        uploads.value = mapOf("A" to 300L, "B" to 500L)
+        assertEquals("B posted since", listOf("B", "A", "C"), model.view.value.items.map { it.id })
+        store.star(saved("v", "V"))
+        model.selectSegment(ItemType.VIDEO)
+        assertEquals("Videos order as Recently added", LibrarySort.RECENT, model.view.value.sort)
     }
 
     @Test fun untaggedAndMatchAllApplyToTheCurrentSegment() = runTest {
