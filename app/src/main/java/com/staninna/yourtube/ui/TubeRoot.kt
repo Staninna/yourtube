@@ -114,9 +114,15 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
         vm.dismissCorruptNotice()
     }
 
-    // Native tabs go back to Watch once it has something; Watch goes back through the page's history.
-    BackHandler(enabled = !overlayOpen && if (tab == Tab.WATCH) nav.canGoBack else nav.url != null) {
-        if (tab == Tab.WATCH) host.goBack() else vm.selectTab(Tab.WATCH)
+    // Native tabs go back to Watch once it has something; Watch goes back through the page's history,
+    // and after a new identity, whose page has none, to the start tab.
+    val backToStart by vm.backToStart.collectAsStateWithLifecycle()
+    BackHandler(enabled = !overlayOpen && if (tab == Tab.WATCH) nav.canGoBack || backToStart else nav.url != null) {
+        when {
+            tab != Tab.WATCH -> vm.selectTab(Tab.WATCH)
+            nav.canGoBack -> host.goBack()
+            else -> vm.goBackToStart()
+        }
     }
 
     val watchBar = watchBarColor(page)

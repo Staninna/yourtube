@@ -81,8 +81,8 @@ class BridgeMessageTest {
     }
 
     @Test fun encodesResumeReplies() {
-        assertEquals("""{"type":"resume","videoId":"v","position":55.0}""", BridgeMessage.encode(ResumeReply("v", 55.0)))
-        assertEquals("""{"type":"resume","videoId":"v","position":null}""", BridgeMessage.encode(ResumeReply("v", null)))
+        assertEquals("""{"type":"resume","videoId":"v","position":55.0,"muted":false}""", BridgeMessage.encode(ResumeReply("v", 55.0, muted = false)))
+        assertEquals("""{"type":"resume","videoId":"v","position":null,"muted":false}""", BridgeMessage.encode(ResumeReply("v", null, muted = false)))
     }
 
     // --- content filtering ---
@@ -120,5 +120,26 @@ class BridgeMessageTest {
             """{"type":"videoBox","videoWidth":854,"videoHeight":480,"left":0,"top":0,"right":412,"bottom":231.75,"viewportWidth":412}""",
         )
         assertEquals(VideoBox(854, 480, 0.0, 0.0, 412.0, 231.75, 412.0), message)
+    }
+
+    @Test fun decodesPlayabilityAndTheConsentMessage() {
+        val report = BridgeMessage.decode(
+            """{"type":"page","reason":"load","url":"u","playability":{"status":"LOGIN_REQUIRED","reason":"not a bot","videoId":null}}""",
+        ) as PageReport
+        assertEquals(Playability("LOGIN_REQUIRED", "not a bot"), report.playability)
+        assertEquals(ConsentRejected, BridgeMessage.decode("""{"type":"consent"}"""))
+    }
+
+    @Test fun aResumeReplyAlwaysSaysMutedAndCarriesPlaybackOnlyAfterANewIdentity() {
+        assertEquals("""{"type":"resume","videoId":"v","position":12.0,"muted":true}""", BridgeMessage.encode(ResumeReply("v", 12.0, muted = true)))
+        assertEquals(
+            """{"type":"resume","videoId":"v","position":null,"muted":false,"carried":{"rate":1.5,"paused":true}}""",
+            BridgeMessage.encode(ResumeReply("v", null, muted = false, Carried(1.5, paused = true))),
+        )
+    }
+
+    @Test fun decodesTheViewersMute() {
+        assertEquals(ViewerMute(true), BridgeMessage.decode("""{"type":"mute","muted":true}"""))
+        assertNull("muted is required", BridgeMessage.decode("""{"type":"mute"}"""))
     }
 }

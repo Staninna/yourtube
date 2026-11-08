@@ -1,6 +1,7 @@
 package com.staninna.yourtube
 
 import java.net.URI
+import java.net.URISyntaxException
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -47,13 +48,35 @@ object YouTube {
 
     /** The query a results page shows, so the search field can start from it; null on any other page. */
     fun searchQuery(url: String?): String? {
-        val uri = url?.let { runCatching { URI(it) }.getOrNull() } ?: return null
+        val uri = url?.let(::uri) ?: return null
         if (uri.host?.lowercase() !in CONTENT_HOSTS || uri.rawPath != "/results") return null
-        return uri.rawQuery.orEmpty().split('&')
-            .firstOrNull { it.startsWith("search_query=") }
-            ?.let { URLDecoder.decode(it.substringAfter('='), "UTF-8") }
-            ?.takeIf { it.isNotBlank() }
+        return queryParam(url, "search_query")?.takeIf { it.isNotBlank() }
     }
+
+    /** [url] parsed, or null when it is no valid URI. */
+    fun uri(url: String): URI? = try {
+        URI(url)
+    } catch (_: URISyntaxException) {
+        null
+    }
+
+    /** The first [name] parameter of [url]'s query, decoded; null when it is missing or empty. */
+    fun queryParam(url: String, name: String): String? =
+        uri(url)?.rawQuery.orEmpty().split('&')
+            .firstOrNull { it.startsWith("$name=") }
+            // URI has checked every escape, so decoding cannot fail.
+            ?.let { URLDecoder.decode(it.substringAfter('='), "UTF-8") }
+            ?.takeIf { it.isNotEmpty() }
+
+    /** [url] without the parameters that set where a video starts (`t`, `start`). */
+    fun withoutStartTime(url: String): String {
+        val query = uri(url)?.rawQuery ?: return url
+        val kept = query.split('&').filterNot { it.substringBefore('=') in START_PARAMS }
+        val fragment = url.substringAfter('#', "").let { if (it.isEmpty()) "" else "#$it" }
+        return url.substringBefore('?') + (if (kept.isEmpty()) "" else "?" + kept.joinToString("&")) + fragment
+    }
+
+    private val START_PARAMS = setOf("t", "start")
 
     /** [url] as it is worth sharing: the desktop host, which opens in the YouTube app or any browser. */
     fun shareUrl(url: String): String = url.replaceFirst("://m.youtube.com", "://www.youtube.com")

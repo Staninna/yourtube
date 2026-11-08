@@ -1,7 +1,8 @@
 // YourTube main script. Runs in the main frame once the DOM is ready. It reports raw facts to the
 // app through window.TubeBridge and never decides what a page is; that happens in Kotlin.
-// Messages out (JSON): page, playback, videoBox, resume, segments, skipped, adLeak. Messages in:
-// resume, segments, undoSkip, and the media session's play, pause and seek. See BridgeMessage.kt.
+// Messages out (JSON): page, playback, videoBox, resume, mute, segments, skipped, adLeak; consent.js
+// sends consent. Messages in: resume, segments, undoSkip, and the media session's play, pause and
+// seek. See BridgeMessage.kt.
 // Settings come from early.js (window.__yourtubeConfig).
 // No timers: navigation comes from the history hook, popstate and state-navigateend, playback from
 // media events captured on the document.
@@ -59,11 +60,22 @@
       return { videoId: d.videoId || null, channelId: d.channelId || null, title: d.title || null, author: d.author || null }
     }
 
+    // Whether the player may play, so the app can tell a bot check. On the first load the player may not
+    // be up yet, but the page's own player response is.
+    function playability(reason) {
+      var response = playerResponse() || (reason === 'load' ? window.ytInitialPlayerResponse : null)
+      var p = response && response.playabilityStatus
+      if (!p) return null
+      var d = response.videoDetails
+      return { status: p.status || null, reason: p.reason || null, videoId: (d && d.videoId) || null }
+    }
+
     function report(reason) {
       var canonical = document.querySelector('link[rel="canonical"]')
       post({
         type: 'page', reason: reason, url: location.href,
         canonical: canonical ? canonical.href : null, title: document.title || '', player: playerFacts(),
+        playability: playability(reason),
       })
     }
 
@@ -155,10 +167,9 @@
       }
       if (e.type === 'loadedmetadata') {
         // Ask before reporting anything, so no progress event can overwrite the stored position first.
-        if (!hasTimeParam()) {
-          resumeTarget = { videoId: id, video: video }
-          post({ type: 'resume', videoId: id })
-        }
+        // A video with t= keeps its start, but still takes the viewer's mute from the answer.
+        resumeTarget = { videoId: id, video: video, keepStart: hasTimeParam() }
+        post({ type: 'resume', videoId: id })
         askSegments(video, id)
         report('metadata')
       }
@@ -218,10 +229,59 @@
       if (!target || target.videoId !== message.videoId || currentVideoId() !== message.videoId) return
       resumeTarget = null
       // Only when the video is still near its start, so a late reply never yanks the viewer back.
-      if (typeof message.position === 'number' && target.video.currentTime < MIN_RESUME) {
+      if (!target.keepStart && typeof message.position === 'number' && target.video.currentTime < MIN_RESUME) {
         target.video.currentTime = message.position
       }
+      // A fresh identity lets YouTube start muted ("Tap to unmute"); only the viewer decides that here.
+      setMuted(target.video, message.muted, true)
+      // After a new identity the video plays on as it did, through the player so its controls agree.
+      var carried = message.carried
+      if (!carried) return
+      try {
+        if (carried.rate > 0 && carried.rate !== 1) player().setPlaybackRate(carried.rate)
+      } catch (e) {}
+      if (carried.paused) target.video.pause()
     }
+
+    // --- the viewer's mute ---
+    // A mute change the viewer made goes to the app, which applies it to every video after. The viewer's
+    // is one that follows a touch on the player (where its mute controls are) or a key within a second.
+    // A touch elsewhere does not count: YouTube unmutes by itself when a tapped link opens a video. The
+    // changes this script makes are tagged.
+    var lastInput = 0
+    document.addEventListener('pointerdown', function (e) {
+      // The player's controls sit beside #movie_player, inside the player's container.
+      var area = document.getElementById('player-container-id') || player()
+      if (area && area.contains(e.target)) lastInput = Date.now()
+    }, true)
+    document.addEventListener('keydown', function () { lastInput = Date.now() }, true)
+    var ownMute = null // the muted state this script set, until its volumechange arrives
+    var lastMuted = null
+    // Through the player when its controls should agree (the "Tap to unmute" chip goes with it).
+    function setMuted(video, muted, viaPlayer) {
+      if (video.muted === muted) return
+      ownMute = muted
+      if (viaPlayer) {
+        try {
+          if (muted) player().mute()
+          else player().unMute()
+        } catch (e) {}
+      }
+      if (video.muted !== muted) video.muted = muted
+    }
+    document.addEventListener('volumechange', function (e) {
+      var video = e.target
+      // The main player only: a thumbnail's inline preview is a video of its own.
+      var p = player()
+      if (!(video instanceof HTMLVideoElement) || !p || !p.contains(video) || video.muted === lastMuted) return
+      lastMuted = video.muted
+      if (ownMute === video.muted) {
+        ownMute = null
+        return
+      }
+      if (isAd() || Date.now() - lastInput > 1000) return
+      post({ type: 'mute', muted: video.muted })
+    }, true)
 
     // --- ad safety net: an ad that got past the other layers ---
     // Every ad that shows is counted (adLeak). With the safety net on it is muted and played at 16x,
@@ -236,7 +296,7 @@
         post({ type: 'adLeak', url: location.href })
       }
       if (!config().adSafetyNet) return
-      video.muted = true
+      setMuted(video, true)
       if (video.playbackRate !== AD_RATE) video.playbackRate = AD_RATE
       var p = player()
       var skip = p && p.querySelector('.ytp-ad-skip-button-modern, .ytp-ad-skip-button, .ytp-skip-ad-button')
@@ -245,7 +305,7 @@
     function afterAd(video) {
       if (!ad) return
       if (config().adSafetyNet) {
-        video.muted = ad.wasMuted
+        setMuted(video, ad.wasMuted)
         video.playbackRate = ad.wasRate
       }
       ad = null
@@ -293,7 +353,7 @@
       var mute = find(function (s) { return s.action === 'mute' && now >= s.start && now < s.end })
       if (mute && !sponsor.muted) {
         sponsor.muted = { wasMuted: video.muted }
-        video.muted = true
+        setMuted(video, true)
       } else if (!mute) leaveSegments()
       var skip = find(function (s) {
         return s.action === 'skip' && !s.undone && last <= s.start && now >= s.start && now < s.end
@@ -325,7 +385,7 @@
     }, true)
 
     function leaveSegments() {
-      if (sponsor.muted && sponsor.video) sponsor.video.muted = sponsor.muted.wasMuted
+      if (sponsor.muted && sponsor.video) setMuted(sponsor.video, sponsor.muted.wasMuted)
       sponsor.muted = null
     }
 

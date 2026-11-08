@@ -39,8 +39,10 @@ class WebPolicyTest {
     // --- identity ---
 
     @Test fun strategyFollowsFeatureSupport() {
-        assertTrue(IdentityStrategy.choose(multiProfile = true) is IdentityStrategy.Profiles)
-        assertTrue(IdentityStrategy.choose(multiProfile = false) is IdentityStrategy.RestartProcess)
+        assertTrue(IdentityStrategy.choose(multiProfile = true, deleteBrowsingData = true) is IdentityStrategy.Profiles)
+        assertTrue(IdentityStrategy.choose(multiProfile = true, deleteBrowsingData = false) is IdentityStrategy.Profiles)
+        assertTrue(IdentityStrategy.choose(multiProfile = false, deleteBrowsingData = true) is IdentityStrategy.WipeDefault)
+        assertTrue(IdentityStrategy.choose(multiProfile = false, deleteBrowsingData = false) is IdentityStrategy.RestartProcess)
     }
 
     @Test fun seedRejectsConsentAndMatchesThemeAndLocale() {

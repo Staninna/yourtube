@@ -22,4 +22,7 @@ sealed interface UiEvent {
     data class ImportFailed(val problem: BackupProblem) : UiEvent
     data object Exported : UiEvent
     data object ExportFailed : UiEvent
+
+    /** Watch moved to a new identity. */
+    data object NewIdentity : UiEvent
 }

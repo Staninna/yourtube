@@ -49,6 +49,8 @@ data class PageReport(
     val title: String = "",
     /** `movie_player.getPlayerResponse().videoDetails`, or null when there is no player response. */
     val player: PlayerFacts? = null,
+    /** The player response's `playabilityStatus`, or null when there is none. */
+    val playability: Playability? = null,
 ) : BridgeMessage {
     @Serializable
     enum class Reason {
@@ -68,6 +70,13 @@ data class PlayerFacts(
     val title: String? = null,
     val author: String? = null,
 )
+
+/**
+ * A player response's `playabilityStatus`: [status] such as `OK` or `LOGIN_REQUIRED`, its [reason] as
+ * YouTube words it, and the response's `videoDetails.videoId`, which a refused response may lack.
+ */
+@Serializable
+data class Playability(val status: String? = null, val reason: String? = null, val videoId: String? = null)
 
 /** A media event of the main video. Ads are filtered out by the page script. */
 @Serializable
@@ -101,6 +110,19 @@ data class SegmentsRequest(val videoId: String) : BridgeMessage
 @SerialName("skipped")
 data class SegmentSkipped(val videoId: String, val category: SegmentCategory, val start: Double, val end: Double) : BridgeMessage
 
+/**
+ * The viewer muted or unmuted the video themselves. YouTube's own muted start, the ad safety net and
+ * SponsorBlock's mute are not the viewer and send nothing.
+ */
+@Serializable
+@SerialName("mute")
+data class ViewerMute(val muted: Boolean) : BridgeMessage
+
+/** The page answered YouTube's in-page consent dialog with "Reject all". */
+@Serializable
+@SerialName("consent")
+data object ConsentRejected : BridgeMessage
+
 /** An ad played on [url] despite the other ad layers. */
 @Serializable
 @SerialName("adLeak")
@@ -128,10 +150,18 @@ data class VideoBox(
 @Serializable
 sealed interface BridgeReply
 
-/** Native's answer to a [ResumeRequest]; a null [position] means start from the beginning. */
+/**
+ * Native's answer to a [ResumeRequest]: where to start, null for the beginning (a `t=` in the URL wins
+ * either way), and whether the viewer wants it muted. After a new identity, [carried] is how the video
+ * played under the old one.
+ */
 @Serializable
 @SerialName("resume")
-data class ResumeReply(val videoId: String, val position: Double?) : BridgeReply
+data class ResumeReply(val videoId: String, val position: Double?, val muted: Boolean, val carried: Carried? = null) : BridgeReply
+
+/** How a video played when its identity was replaced, for the new identity to take over. */
+@Serializable
+data class Carried(val rate: Double, val paused: Boolean)
 
 /**
  * [videoId]'s segments with what to do at each, in order of start. Answers a [SegmentsRequest], and is

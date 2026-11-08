@@ -9,6 +9,8 @@
         android:enableOnBackInvokedCallback="true"
         android:name=".TubeApp"
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
@@ -24,6 +26,38 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- YouTube links. Not autoVerify: the app does not own these domains, so Android lists it as
+                 one choice among the apps that open them. DeepLinks checks each link again. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="www.youtube.com" />
+                <data android:host="m.youtube.com" />
+                <data android:host="youtube.com" />
+                <data android:pathPrefix="/watch" />
+                <data android:pathPrefix="/shorts/" />
+                <data android:pathPrefix="/@" />
+                <data android:pathPrefix="/channel/" />
+                <data android:pathPrefix="/playlist" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="youtu.be" />
+                <data android:pathPattern="/.*" />
+            </intent-filter>
+            <!-- Shared text with a YouTube link in it. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
 

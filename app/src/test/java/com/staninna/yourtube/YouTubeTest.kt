@@ -42,4 +42,21 @@ class YouTubeTest {
         assertEquals(0xFF0F0F0F.toInt(), YouTube.pageBackground(dark = true))
         assertEquals(0xFFFFFFFF.toInt(), YouTube.pageBackground(dark = false))
     }
+
+    @Test fun queryParamDecodesTheFirstValue() {
+        assertEquals("a b&c", YouTube.queryParam("https://x.example/p?q=a+b%26c&q=2", "q"))
+        assertNull(YouTube.queryParam("https://x.example/p?q=", "q"))
+        assertNull(YouTube.queryParam("https://x.example/p?qq=1", "q"))
+        assertNull(YouTube.queryParam("::", "q"))
+    }
+
+    @Test fun startTimesLeaveTheUrl() {
+        assertEquals(
+            "https://m.youtube.com/watch?v=dQw4w9WgXcQ&list=PL1",
+            YouTube.withoutStartTime("https://m.youtube.com/watch?v=dQw4w9WgXcQ&t=42s&list=PL1&start=3"),
+        )
+        assertEquals("https://m.youtube.com/watch?v=dQw4w9WgXcQ", YouTube.withoutStartTime("https://m.youtube.com/watch?v=dQw4w9WgXcQ"))
+        assertEquals("https://m.youtube.com/watch", YouTube.withoutStartTime("https://m.youtube.com/watch?t=1"))
+        assertEquals("https://m.youtube.com/watch?v=x#c", YouTube.withoutStartTime("https://m.youtube.com/watch?v=x&t=1#c"))
+    }
 }

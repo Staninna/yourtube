@@ -15,9 +15,9 @@ import java.io.File
 import java.util.UUID
 
 /**
- * The app's first-party state: library, tags, history (which holds resume positions), settings, and
- * the channel and feed caches. Identity changes never touch it. Every mutation is one atomic
- * `update {}` on its file.
+ * The app's first-party state: library, tags, history (which holds resume positions), settings, the
+ * channel and feed caches, and the player choices identities hand on. Identity changes never touch
+ * it. Every mutation is one atomic `update {}` on its file.
  *
  * Library, settings, channel and feed changes are written right away. History changes with every playback
  * event, so it is kept in memory and written every [PLAYBACK_FLUSH_MS] while playing, and on [flush]
@@ -40,7 +40,8 @@ class Store(
     private val feedsFile = StoreFile(
         dir, "feeds.json", MapSerializer(String.serializer(), ListSerializer(FeedVideo.serializer())), emptyMap(), scope,
     )
-    private val files = listOf(libraryFile, historyFile, settingsFile, channelsFile, feedsFile)
+    private val playerFile = StoreFile(dir, "player.json", PlayerPrefs.serializer(), PlayerPrefs(), scope)
+    private val files = listOf(libraryFile, historyFile, settingsFile, channelsFile, feedsFile, playerFile)
 
     val library: StateFlow<Library> = libraryFile.state
 
@@ -56,6 +57,9 @@ class Store(
      * once while it refreshes. Backups leave it out.
      */
     val feeds: StateFlow<Map<String, List<FeedVideo>>> = feedsFile.state
+
+    /** The last identity's player choices, for the next identity to start with. The library export leaves it out. */
+    val playerPrefs: StateFlow<PlayerPrefs> = playerFile.state
 
     /** Files that could not be read at startup; each was kept as `<name>.corrupt`. */
     val corruptFiles: Set<String> = files.filter { it.loadResult == LoadResult.CORRUPT }.map { it.name }.toSet()
@@ -250,6 +254,10 @@ class Store(
     // --- settings ---
 
     fun updateSettings(transform: (Settings) -> Settings) = settingsFile.update(transform)
+
+    fun setPlayerPrefs(prefs: PlayerPrefs) {
+        if (prefs != playerFile.value) playerFile.update { prefs }
+    }
 
     // --- channel cache ---
 

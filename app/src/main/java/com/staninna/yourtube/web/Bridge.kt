@@ -9,7 +9,11 @@ import android.webkit.WebView
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.staninna.yourtube.YouTube
+import com.staninna.yourtube.data.PlayerPrefs
 import org.json.JSONObject
+
+/** `scheme://host` of [url], or null without one. */
+internal fun originOf(url: String?): String? = url?.let(Uri::parse)?.let { "${it.scheme}://${it.host}" }
 
 /** What the page tells the app. Called on the main thread with decoded messages. */
 interface PageListener {
@@ -17,8 +21,8 @@ interface PageListener {
     fun onPageReport(report: PageReport)
     fun onPlayback(event: PlaybackEvent)
 
-    /** Where [videoId] should start, or null for the beginning. */
-    fun resumePosition(videoId: String): Double?
+    /** Where [videoId] should start, and how. */
+    fun resume(videoId: String): ResumeReply
 
     /** [videoId]'s SponsorBlock segments for the page. [reply] is called once, later, on the main thread. */
     fun requestSegments(videoId: String, reply: (SegmentsReply) -> Unit)
@@ -27,6 +31,18 @@ interface PageListener {
 
     /** An ad played on [url]. */
     fun onAdLeak(url: String)
+
+    /** The viewer muted or unmuted the video. */
+    fun onViewerMute(muted: Boolean)
+
+    /** The page rejected YouTube's in-page consent dialog. */
+    fun onConsentRejected()
+
+    /** The player choices a new identity starts with. */
+    fun playerPrefs(): PlayerPrefs
+
+    /** The player choices an identity had when it ended. */
+    fun onPlayerPrefs(prefs: PlayerPrefs)
 }
 
 /**
@@ -69,15 +85,15 @@ internal class Bridge(
         when (val message = BridgeMessage.decode(text) ?: return) {
             is PageReport -> listener.onPageReport(message)
             is PlaybackEvent -> listener.onPlayback(message)
-            is ResumeRequest -> reply(BridgeMessage.encode(ResumeReply(message.videoId, listener.resumePosition(message.videoId))))
+            is ResumeRequest -> reply(BridgeMessage.encode(listener.resume(message.videoId)))
             is SegmentsRequest -> listener.requestSegments(message.videoId) { reply(BridgeMessage.encode(it)) }
             is SegmentSkipped -> listener.onSegmentSkipped(message)
             is AdLeak -> listener.onAdLeak(message.url)
+            ConsentRejected -> listener.onConsentRejected()
+            is ViewerMute -> listener.onViewerMute(message.muted)
             is VideoBox -> onVideoBox(message)
         }
     }
-
-    private fun originOf(url: String?): String? = url?.let(Uri::parse)?.let { "${it.scheme}://${it.host}" }
 
     private fun receiveScript(json: String) = "window.__yourtubeReceive && window.__yourtubeReceive(${JSONObject.quote(json)})"
 

@@ -83,8 +83,13 @@ object PageConfig {
         ".ytmDrawerLayoutContainerDrawerLayout,ytm-mobile-topbar-renderer,#header-bar{display:none !important}",
     ).joinToString("\n")
 
-    /** Sign-in prompts, Premium and app-install promos: nothing a signed-out viewer can act on. */
+    /**
+     * Sign-in prompts, Premium and app-install promos: nothing a signed-out viewer can act on. The
+     * "Get the best experience / Watch in YouTube app" dialog is known by its growth-promo image, with
+     * the full-screen container it sits in.
+     */
     private val NAG_CSS = listOf(
+        "#dialog-container:has(img[src*=\"/img/promos/growth/\"])",
         "ytm-mealbar-promo-renderer", ".mealbar-promo-renderer", "ytm-upsell-dialog-renderer",
         "ytm-statement-banner-renderer", "ytm-sign-in-promo-renderer", "ytm-account-promo-renderer",
         ".mobile-topbar-header-sign-in-button", "ytm-open-app-button-renderer", "ytm-app-promo-renderer",

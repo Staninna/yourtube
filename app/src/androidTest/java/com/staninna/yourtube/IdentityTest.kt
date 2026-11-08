@@ -27,7 +27,12 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import android.webkit.CookieManager
+import com.staninna.yourtube.data.PlayerPrefs
+import com.staninna.yourtube.web.IdentityStrategy
+import com.staninna.yourtube.web.ResumeReply
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -51,10 +56,14 @@ class IdentityTest {
         override fun onNavigated(url: String) = Unit
         override fun onPageReport(report: PageReport) = Unit
         override fun onPlayback(event: PlaybackEvent) = Unit
-        override fun resumePosition(videoId: String): Double? = null
+        override fun resume(videoId: String) = ResumeReply(videoId, null, muted = false)
+        override fun onViewerMute(muted: Boolean) = Unit
         override fun requestSegments(videoId: String, reply: (SegmentsReply) -> Unit) = Unit
         override fun onSegmentSkipped(skip: SegmentSkipped) = Unit
         override fun onAdLeak(url: String) = Unit
+        override fun onConsentRejected() = Unit
+        override fun playerPrefs() = PlayerPrefs()
+        override fun onPlayerPrefs(prefs: PlayerPrefs) = Unit
     }
 
     @Test fun replacedIdentityIsWipedAfterItsWebViewIsDestroyed() = runBlocking {
@@ -94,6 +103,71 @@ class IdentityTest {
             openLocalPage(probe)
             assertEquals("null", probe.eval("String(localStorage.getItem('probe'))"))
             onMain { probe.destroy() }
+        }
+    }
+
+    /**
+     * The new-identity button's path ([WebViewHost.reroll]) on each strategy that rerolls in process: a
+     * cookie and localStorage set under the old identity are gone under the new one, which still has
+     * its seed.
+     */
+    @Test fun rerollOnProfilesLeavesNoCookieOrStorage() = runBlocking {
+        assumeTrue(WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE))
+        rerollLeavesNothing(IdentityStrategy.Profiles()) { WebViewCompat.getProfile(it).cookieManager }
+    }
+
+    /** The fallback without profiles: the default profile is wiped before the new identity is seeded. */
+    @Test fun rerollOnTheDefaultProfileLeavesNoCookieOrStorage() = runBlocking {
+        assumeTrue(WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA))
+        rerollLeavesNothing(IdentityStrategy.WipeDefault()) { CookieManager.getInstance() }
+    }
+
+    /**
+     * An identity prepared for an Activity that went away before Compose built its WebView is wiped
+     * all the same, so the next Activity's host on the default profile does not wait for it forever.
+     */
+    @Test fun anIdentityAbandonedWithItsActivityDoesNotBlockTheNext() = runBlocking {
+        assumeTrue(WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA))
+        val dir = File(compose.activity.cacheDir, "store-test-" + UUID.randomUUID()).apply { mkdirs() }
+        val store = Store(dir, CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1)))
+        val strategy = IdentityStrategy.WipeDefault()
+
+        lateinit var abandoned: WebViewHost
+        compose.runOnUiThread { abandoned = WebViewHost(compose.activity, store.settings, NoPage, onRestartNeeded = {}, strategy = strategy) }
+        // Ready, but nothing composes it before its Activity goes.
+        withTimeout(15_000) { while (abandoned.generation.value == null) delay(50) }
+        compose.activityRule.scenario.recreate()
+
+        lateinit var host: WebViewHost
+        compose.runOnUiThread { host = WebViewHost(compose.activity, store.settings, NoPage, onRestartNeeded = {}, strategy = strategy) }
+        compose.setContent { WebViewSlot(host, Modifier.fillMaxSize()) }
+        awaitWebView(previous = null)
+        assertTrue("the new identity is seeded", onMain { CookieManager.getInstance().getCookie(BASE).orEmpty() }.contains("SOCS="))
+    }
+
+    private suspend fun rerollLeavesNothing(strategy: IdentityStrategy, cookiesOf: (WebView) -> CookieManager) {
+        val dir = File(compose.activity.cacheDir, "store-test-" + UUID.randomUUID()).apply { mkdirs() }
+        val store = Store(dir, CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1)))
+        lateinit var host: WebViewHost
+        compose.runOnUiThread { host = WebViewHost(compose.activity, store.settings, NoPage, onRestartNeeded = {}, strategy = strategy) }
+        compose.setContent { WebViewSlot(host, Modifier.fillMaxSize()) }
+
+        withTimeout(30_000) {
+            val first = awaitWebView(previous = null)
+            openLocalPage(first)
+            assertEquals("stored", first.eval("localStorage.setItem('probe', 'stored'); localStorage.getItem('probe')"))
+            onMain {
+                suspendCancellableCoroutine { done -> cookiesOf(first).setCookie(BASE, "probe=stored; Path=/; Secure") { done.resume(Unit) } }
+            }
+            assertTrue(onMain { cookiesOf(first).getCookie(BASE).orEmpty() }.contains("probe=stored"))
+
+            onMain { host.reroll() }
+            val second = awaitWebView(previous = first)
+            val jar = onMain { cookiesOf(second).getCookie(BASE).orEmpty() }
+            assertTrue("seeded: $jar", jar.contains("SOCS="))
+            assertFalse("cookie gone: $jar", jar.contains("probe="))
+            openLocalPage(second)
+            assertEquals("null", second.eval("String(localStorage.getItem('probe'))"))
         }
     }
 

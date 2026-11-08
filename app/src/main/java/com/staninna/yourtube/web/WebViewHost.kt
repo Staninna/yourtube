@@ -18,7 +18,11 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.core.os.ConfigurationCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import com.staninna.yourtube.YouTube
 import com.staninna.yourtube.data.AdLayer
 import com.staninna.yourtube.data.Settings
@@ -84,8 +88,8 @@ class TubeWebView internal constructor(context: Context, internal val identity: 
 /**
  * Owns the WebView and everything bound to it, for exactly as long as its Activity lives: identity
  * and profile binding, settings, the message bridge, document-start scripts, the navigation policy,
- * the network layer of ad blocking, navigation state, fullscreen, the video's place for
- * picture-in-picture, and render-process recovery.
+ * the network layer of ad blocking, the user agent, navigation state, fullscreen, the video's place
+ * for picture-in-picture, render-process recovery and the user's new identities.
  *
  * Compose renders the WebView keyed on [generation] (see `WebViewSlot`), calling [create] and
  * [release], so creation and destruction follow composition. A new identity means a new generation
@@ -169,7 +173,7 @@ class WebViewHost(
 
     /** Loads [url], or the watch page in its place when it is a Short and Shorts are removed. */
     fun load(url: String) {
-        val target = (NavigationPolicy.decide(url, settings.value.removeShorts) as? Navigation.Rewrite)?.url ?: url
+        val target = rewritten(url)
         requestedUrl = target
         _nav.update { it.copy(error = null) }
         webView?.loadUrl(target) ?: run { pendingUrl = target }
@@ -240,6 +244,28 @@ class WebViewHost(
 
     /** The URL to bring back after process death or a new identity. */
     val restorableUrl: String? get() = nav.value.url ?: requestedUrl
+
+    /**
+     * A new identity on the user's request. The page's player choices go to the listener first, then
+     * the page reloads under the new identity; an interstitial gives way to the page it stood in front of.
+     */
+    fun reroll() {
+        // The video resumes where it is, not at a `t=` it was opened with.
+        val url = restorableUrl?.let { rewritten(YouTube.withoutStartTime(Interstitials.reloadUrl(it))) }
+        snapshotPlayerPrefs { newIdentity(url) }
+    }
+
+    /**
+     * Reads the page's player choices into [PageListener.onPlayerPrefs], then runs [then]. Without a
+     * YouTube page there is nothing to read and [then] runs at once.
+     */
+    fun snapshotPlayerPrefs(then: () -> Unit = {}) {
+        val view = webView?.takeIf { originOf(it.url) in YouTube.ORIGINS } ?: return then()
+        view.evaluateJavascript(PlayerPrefsStorage.READ_SCRIPT) { answer ->
+            listener.onPlayerPrefs(PlayerPrefsStorage.read(answer))
+            then()
+        }
+    }
 
     /**
      * Replaces the WebView with a new one under a fresh identity and loads [url] in it. The old
@@ -335,6 +361,7 @@ class WebViewHost(
     // After every property above, including the client: this starts preparing the first identity.
     init {
         activity.lifecycleScope.launch { settings.collect(::applySettings) }
+        activity.lifecycle.addObserver(LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_DESTROY) abandon() })
         newIdentity(url = null)
     }
 
@@ -346,12 +373,19 @@ class WebViewHost(
             mediaPlaybackRequiresUserGesture = false
             loadWithOverviewMode = true
             useWideViewPort = true
-            // Drop the WebView marker but keep "Version/4.0": YouTube exempts that UA from consent.
-            userAgentString = userAgentString.replace("; wv", "")
+            val major = UserAgent.majorVersion(userAgentString)
+            // Without a Chrome version WebView's own UA stays; it is a WebView UA all the same.
+            if (major != null) {
+                userAgentString = UserAgent.of(major)
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) {
+                    WebSettingsCompat.setUserAgentMetadata(this, UserAgent.metadata(major, WebSettingsCompat.getUserAgentMetadata(this)))
+                }
+            }
         }
         view.webViewClient = client
         view.webChromeClient = chrome
         bridge.install(view)
+        scripts.registerFixed(view, listener.playerPrefs(), System.currentTimeMillis())
         scripts.register(view, settings.value)
     }
 
@@ -384,6 +418,20 @@ class WebViewHost(
         scripts.applyToCurrentPage(view, settings)
         val watch = view.url?.takeIf { settings.removeShorts }?.let(NavigationPolicy::shortAsWatch) ?: return
         view.loadUrl(watch)
+    }
+
+    /** [url], or its watch page when it is a Short and Shorts are removed. */
+    private fun rewritten(url: String): String =
+        (NavigationPolicy.decide(url, settings.value.removeShorts) as? Navigation.Rewrite)?.url ?: url
+
+    /**
+     * The Activity is gone. An identity that never got its WebView has no release to clear it, and a
+     * strategy that waits for the last identity's wipe would wait for it forever.
+     */
+    private fun abandon() {
+        preparing?.cancel()
+        identity?.takeIf { webView == null }?.let(strategy::clear)
+        identity = null
     }
 
     private fun isDark(): Boolean =

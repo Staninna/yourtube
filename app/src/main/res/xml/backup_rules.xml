@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Before Android 12. The same files as data_extraction_rules.xml: the store only, no WebView data. -->
+<full-backup-content>
+    <include domain="file" path="library.json" />
+    <include domain="file" path="history.json" />
+    <include domain="file" path="settings.json" />
+    <include domain="file" path="player.json" />
+</full-backup-content>

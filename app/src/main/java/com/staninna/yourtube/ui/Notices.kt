@@ -25,6 +25,7 @@ object Notices {
         is UiEvent.ImportFailed -> Notice(problem(event.problem))
         UiEvent.Exported -> Notice("Library exported")
         UiEvent.ExportFailed -> Notice("Couldn't save the export. Try another folder.")
+        UiEvent.NewIdentity -> Notice("New identity. Your library and history are untouched.")
     }
 
     /** "Imported 3 items, 1 tag and 40 history entries", with tag gains and skipped entries after. */

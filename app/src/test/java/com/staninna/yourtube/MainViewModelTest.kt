@@ -4,6 +4,7 @@ import com.staninna.yourtube.data.BackupProblem
 import com.staninna.yourtube.data.ItemType
 import com.staninna.yourtube.data.Library
 import com.staninna.yourtube.data.PlaybackKind
+import com.staninna.yourtube.data.PlayerPrefs
 import com.staninna.yourtube.data.StarredItem
 import com.staninna.yourtube.data.Store
 import com.staninna.yourtube.feed.ChannelFetch
@@ -16,6 +17,9 @@ import com.staninna.yourtube.web.PageReport
 import com.staninna.yourtube.web.PlaybackEvent
 import com.staninna.yourtube.web.PlayerCommand
 import com.staninna.yourtube.web.PlayerFacts
+import com.staninna.yourtube.web.Carried
+import com.staninna.yourtube.web.Playability
+import com.staninna.yourtube.web.ResumeReply
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
@@ -260,5 +264,106 @@ class MainViewModelTest {
         vm.onNavigated("https://m.youtube.com/@RickAstleyYT")
         vm.onNavigated("https://m.youtube.com/watch?v=$video")
         assertFalse("not playing until the page says so", vm.playing.value)
+    }
+
+    // --- new identity, consent and bot checks ---
+
+    @Test fun aNewIdentityAsksTheHostAndTellsTheUser() = runTest {
+        val (vm, _) = viewModel()
+        val events = Channel<UiEvent>(Channel.UNLIMITED)
+        val requests = Channel<Unit>(Channel.UNLIMITED)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.events.collect { events.send(it) } }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.identityRequests.collect { requests.send(it) } }
+        vm.newIdentity()
+        assertEquals(Unit, requests.tryReceive().getOrNull())
+        assertEquals(UiEvent.NewIdentity, events.tryReceive().getOrNull())
+    }
+
+    @Test fun theReloadedVideoPlaysOnAsItDidOnce() = runTest {
+        val (vm, _) = viewModel()
+        store.recordPlayback(PlaybackKind.TIME, video, 90.0, 212.0, null)
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        vm.onPlayback(PlaybackEvent(PlaybackKind.PAUSE, video, 90.0, 212.0, paused = true, rate = 1.5))
+        vm.newIdentity()
+
+        assertEquals(ResumeReply(video, 85.0, muted = false, Carried(rate = 1.5, paused = true)), vm.resume(video))
+        assertEquals("once only", ResumeReply(video, 85.0, muted = false), vm.resume(video))
+    }
+
+    @Test fun anotherVideoAfterANewIdentityStartsAsUsual() = runTest {
+        val (vm, _) = viewModel()
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        vm.onPlayback(PlaybackEvent(PlaybackKind.PLAY, video, 30.0, 212.0, rate = 2.0))
+        vm.newIdentity()
+        assertEquals(ResumeReply("rL0qEmTRI-I", null, muted = false), vm.resume("rL0qEmTRI-I"))
+    }
+
+    @Test fun theCarryIsDroppedOnceWatchLeavesTheVideo() = runTest {
+        val (vm, _) = viewModel()
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        vm.onPlayback(PlaybackEvent(PlaybackKind.PLAY, video, 30.0, 212.0, rate = 2.0))
+        vm.newIdentity()
+        vm.onNavigated("https://m.youtube.com/@RickAstleyYT")
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        assertNull(vm.resume(video).carried)
+    }
+
+    @Test fun everyVideoStartsWithSoundUntilTheViewerMutes() = runTest {
+        val (vm, _) = viewModel()
+        assertFalse(vm.resume(video).muted)
+        vm.onViewerMute(true)
+        assertTrue("the next video stays muted", vm.resume("rL0qEmTRI-I").muted)
+        vm.onViewerMute(false)
+        assertFalse(vm.resume(video).muted)
+    }
+
+    @Test fun backAtWatchsRootAfterANewIdentityGoesToTheStartTabOnce() = runTest {
+        val (vm, _) = viewModel()
+        vm.open("https://m.youtube.com/watch?v=$video")
+        assertFalse(vm.backToStart.value)
+        vm.newIdentity()
+        assertTrue(vm.backToStart.value)
+        vm.goBackToStart()
+        assertEquals(Tab.LIBRARY, vm.tab.value)
+        assertFalse(vm.backToStart.value)
+    }
+
+    @Test fun botChecksShowByAddressOrByTheRefusedPlayerAndAreCounted() = runTest {
+        val (vm, _) = viewModel()
+        val before = Diagnostics.counts.value["botcheck"] ?: 0
+        vm.onNavigated("https://www.google.com/sorry/index?continue=x")
+        assertTrue(vm.botCheck.value)
+
+        val url = "https://m.youtube.com/watch?v=$video"
+        vm.onNavigated(url)
+        assertFalse(vm.botCheck.value)
+        vm.onPageReport(PageReport(url, PageReport.Reason.LOAD, playability = Playability("LOGIN_REQUIRED", "Sign in to confirm you're not a bot")))
+        assertTrue(vm.botCheck.value)
+        assertEquals(before + 2, Diagnostics.counts.value["botcheck"])
+    }
+
+    @Test fun consentPagesAndDialogsAreCounted() = runTest {
+        val (vm, _) = viewModel()
+        val page = Diagnostics.counts.value["consent.page"] ?: 0
+        val dialog = Diagnostics.counts.value["consent.dialog"] ?: 0
+        vm.onNavigated("https://consent.youtube.com/m?continue=x")
+        vm.onConsentRejected()
+        assertEquals(page + 1, Diagnostics.counts.value["consent.page"])
+        assertEquals(dialog + 1, Diagnostics.counts.value["consent.dialog"])
+    }
+
+    @Test fun playerChoicesGoToTheStoreAndBack() = runTest {
+        val (vm, _) = viewModel()
+        val prefs = PlayerPrefs(quality = 720, captions = false)
+        vm.onPlayerPrefs(prefs)
+        assertEquals(prefs, store.playerPrefs.value)
+        assertEquals(prefs, vm.playerPrefs())
+    }
+
+    @Test fun thePrivacySwitchHidesTheButton() = runTest {
+        val (vm, _) = viewModel()
+        assertTrue(vm.settings.value.showNewIdentity)
+        vm.setShowNewIdentity(false)
+        assertFalse(vm.settings.value.showNewIdentity)
     }
 }

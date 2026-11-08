@@ -6,13 +6,18 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudOff
@@ -22,6 +27,8 @@ import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.TheaterComedy
+import androidx.compose.material.icons.outlined.GppMaybe
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -31,6 +38,8 @@ import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -63,7 +72,8 @@ fun watchBarColor(page: PageIdentity): Color =
 
 /**
  * The Watch tab: YouTube in the WebView under a top bar colored like YouTube's own header, so the two
- * read as one surface. The bar has no title; it carries back, star, search, Home and the overflow.
+ * read as one surface. The bar has no title; it carries back, star, search, the new-identity mask
+ * (unless Settings hides it), Home and the overflow. A bot check shows a banner under it.
  * A thin line shows load progress, and a failed main-frame load shows a native error with Retry.
  * Without [chrome] (picture-in-picture) only the WebView shows.
  */
@@ -79,8 +89,12 @@ fun WatchScreen(
     modifier: Modifier = Modifier,
 ) {
     val page by vm.page.collectAsStateWithLifecycle()
+    val botCheck by vm.botCheck.collectAsStateWithLifecycle()
     Column(modifier.fillMaxSize()) {
         if (chrome) WatchTopBar(vm, host, nav, page, onSearch, onSettings)
+        AnimatedVisibility(chrome && botCheck, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            BotCheckBanner(onNewIdentity = vm::newIdentity)
+        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             // The error state covers the page too, so TalkBack skips it then.
             WebViewSlot(host, Modifier.fillMaxSize(), covered = covered || nav.error != null)
@@ -102,6 +116,7 @@ private fun WatchTopBar(
 ) {
     val context = LocalContext.current
     val offersPip by vm.pip.offersEntry.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
     val container by animateColorAsState(watchBarColor(page), MaterialTheme.motionScheme.defaultEffectsSpec(), label = "bar")
     val content = if (container.luminance() < 0.5f) Color.White else Color(YouTube.PAGE_DARK)
     TopAppBar(
@@ -112,6 +127,9 @@ private fun WatchTopBar(
         actions = {
             if (page != PageIdentity.Other) StarToggle(vm, onDarkBar = container.luminance() < 0.5f)
             SearchAction(onSearch)
+            if (settings.showNewIdentity) {
+                IconButton(onClick = vm::newIdentity) { Icon(Icons.Filled.TheaterComedy, "New identity") }
+            }
             IconButton(onClick = { vm.open(YouTube.HOME) }) { Icon(Icons.Filled.Home, "YouTube home") }
             OverflowMenu(
                 listOfNotNull(
@@ -148,6 +166,25 @@ private fun StarToggle(vm: MainViewModel, onDarkBar: Boolean) {
         modifier = Modifier.semantics { stateDescription = if (starred) "Starred" else "Not starred" },
     ) {
         Icon(if (starred) Icons.Filled.Star else Icons.Outlined.StarBorder, contentDescription = "Star")
+    }
+}
+
+/**
+ * Under the bar while YouTube asks for proof that the viewer is not a bot. Shown whether or not the
+ * bar has the mask, since a new identity is the way past.
+ */
+@Composable
+private fun BotCheckBanner(onNewIdentity: () -> Unit) {
+    Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.secondaryContainer) {
+        Row(
+            Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(Icons.Outlined.GppMaybe, contentDescription = null)
+            Text("YouTube wants a check. Try a fresh identity", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = onNewIdentity) { Text("New identity") }
+        }
     }
 }
 

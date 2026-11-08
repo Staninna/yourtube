@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.staninna.yourtube.data.AdLayer
 import com.staninna.yourtube.data.Library
+import com.staninna.yourtube.data.PlayerPrefs
 import com.staninna.yourtube.data.SegmentAction
 import com.staninna.yourtube.data.SegmentCategory
 import com.staninna.yourtube.data.ServerInput
@@ -19,10 +20,14 @@ import com.staninna.yourtube.page.starItem
 import com.staninna.yourtube.playback.PlaybackHub
 import com.staninna.yourtube.sponsor.SegmentSource
 import com.staninna.yourtube.web.BridgeReply
+import com.staninna.yourtube.web.Carried
+import com.staninna.yourtube.web.Interstitial
+import com.staninna.yourtube.web.Interstitials
 import com.staninna.yourtube.web.PageListener
 import com.staninna.yourtube.web.PageReport
 import com.staninna.yourtube.web.PlaybackEvent
 import com.staninna.yourtube.web.PlayerCommand
+import com.staninna.yourtube.web.ResumeReply
 import com.staninna.yourtube.web.SegmentSkipped
 import com.staninna.yourtube.web.SegmentsReply
 import kotlinx.coroutines.channels.Channel
@@ -115,11 +120,42 @@ class MainViewModel(
     /** URLs the WebView should load, in order. */
     val openRequests: Flow<String> = opens.receiveAsFlow()
 
+    private val identities = Channel<Unit>(Channel.CONFLATED)
+
+    /** Each element asks the WebView host for a new identity. */
+    val identityRequests: Flow<Unit> = identities.receiveAsFlow()
+
+    /** The video playing when the user asked for a new identity: it picks up as it was (speed, pause). */
+    private var carry: PlaybackEvent? = null
+
+    /**
+     * Whether the viewer muted the video, as last set by their own hand in this run. Every video starts
+     * that way: a fresh identity would otherwise let YouTube start it muted.
+     */
+    private var viewerMuted = false
+
+    private val _backToStart = MutableStateFlow(false)
+
+    /**
+     * True after a new identity, until used: the page's history went with the old identity, so back at
+     * Watch's root goes to the start tab instead.
+     */
+    val backToStart: StateFlow<Boolean> = _backToStart.asStateFlow()
+
+    /** Whether Watch shows a bot check, which only a new identity may get past. */
+    val botCheck: StateFlow<Boolean> = combine(currentUrl, lastReport) { url, report ->
+        Interstitials.of(url) == Interstitial.BOT_CHECK ||
+            (report != null && PageIdentity.sameUrl(report.url, url) && Interstitials.isBotCheck(report))
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     init {
         viewModelScope.launch { nowPlaying.collect(playback::publish) }
         // A video can start playing before the player confirms its title; fill it in once it does.
         viewModelScope.launch {
             page.collect { (it as? PageIdentity.Video)?.meta?.let(store::annotateHistory) }
+        }
+        viewModelScope.launch {
+            botCheck.collect { if (it) Diagnostics.count("botcheck", currentUrl.value.orEmpty()) }
         }
         // Each channel page is resolved once per visit, not once per report.
         viewModelScope.launch {
@@ -139,6 +175,23 @@ class MainViewModel(
         opens.trySend(url)
     }
 
+    /**
+     * A new identity for Watch: YouTube sees a new anonymous viewer, the page reloads and a playing video
+     * carries on where it was. Library, history and settings are untouched.
+     */
+    fun newIdentity() {
+        carry = lastPlayback.value
+        _backToStart.value = true
+        identities.trySend(Unit)
+        _events.trySend(UiEvent.NewIdentity)
+    }
+
+    /** Back at Watch's root after a new identity: the start tab, once. */
+    fun goBackToStart() {
+        _backToStart.value = false
+        _tab.value = startTab(store.library.value)
+    }
+
     /** Opens YouTube's results for [query] in Watch. Returns false, and does nothing, for a blank query. */
     fun search(query: String): Boolean {
         val url = YouTube.searchUrl(query) ?: return false
@@ -150,9 +203,12 @@ class MainViewModel(
 
     override fun onNavigated(url: String) {
         currentUrl.value = url
+        if (Interstitials.of(url) == Interstitial.CONSENT) Diagnostics.count("consent.page", url)
         // Leaving a video takes its player down without a pause event; the next video reports its own.
         val videoId = (PageIdentity.fromUrl(url) as? PageIdentity.Video)?.videoId
         if (lastPlayback.value?.videoId != videoId) lastPlayback.value = null
+        // The carry is for the video the new identity reloads, and no other.
+        if (carry?.videoId != videoId) carry = null
     }
 
     override fun onPageReport(report: PageReport) {
@@ -168,13 +224,27 @@ class MainViewModel(
         store.recordPlayback(event.kind, event.videoId, event.position, event.duration, meta)
     }
 
-    override fun resumePosition(videoId: String): Double? = store.resumePosition(videoId)
+    override fun resume(videoId: String): ResumeReply {
+        val carried = carry?.takeIf { it.videoId == videoId }?.let { Carried(it.rate, it.paused) }
+        carry = null
+        return ResumeReply(videoId, store.resumePosition(videoId), viewerMuted, carried)
+    }
 
     override fun requestSegments(videoId: String, reply: (SegmentsReply) -> Unit) = sponsor.request(videoId, reply)
 
     override fun onSegmentSkipped(skip: SegmentSkipped) = sponsor.onSkipped(skip)
 
     override fun onAdLeak(url: String) = Diagnostics.count("ad.leak", url)
+
+    override fun onViewerMute(muted: Boolean) {
+        viewerMuted = muted
+    }
+
+    override fun onConsentRejected() = Diagnostics.count("consent.dialog", currentUrl.value.orEmpty())
+
+    override fun playerPrefs(): PlayerPrefs = store.playerPrefs.value
+
+    override fun onPlayerPrefs(prefs: PlayerPrefs) = store.setPlayerPrefs(prefs)
 
     /** Plays or pauses the video in Watch, the way the media session does. */
     fun playPause() = playback.send(if (playing.value) PlayerCommand.Pause else PlayerCommand.Play)
@@ -223,6 +293,7 @@ class MainViewModel(
 
     fun setRemoveShorts(enabled: Boolean) = store.updateSettings { it.copy(removeShorts = enabled) }
     fun setDynamicColor(enabled: Boolean) = store.updateSettings { it.copy(dynamicColor = enabled) }
+    fun setShowNewIdentity(shown: Boolean) = store.updateSettings { it.copy(showNewIdentity = shown) }
     fun setAdLayer(layer: AdLayer, on: Boolean) = store.updateSettings { it.copy(adBlocking = it.adBlocking.with(layer, on)) }
     fun setSponsorBlock(enabled: Boolean) = store.updateSettings { it.copy(sponsorBlock = it.sponsorBlock.copy(enabled = enabled)) }
     fun setSegmentAction(category: SegmentCategory, action: SegmentAction) =

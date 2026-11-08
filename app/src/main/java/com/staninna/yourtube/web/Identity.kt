@@ -8,6 +8,7 @@ import androidx.webkit.WebStorageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.staninna.yourtube.YouTube
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.Locale
 import java.util.UUID
@@ -23,6 +24,9 @@ class Identity internal constructor(
     val cookies: CookieManager,
     internal val storage: WebStorage,
 ) {
+    /** Completes once this identity's data is deleted. */
+    internal val wiped = CompletableDeferred<Unit>()
+
     /** Binds [webView] to this identity. Must be the very first call on a new WebView. */
     fun bind(webView: WebView) {
         if (profileName != null) WebViewCompat.setProfile(webView, profileName)
@@ -43,7 +47,7 @@ class Identity internal constructor(
  */
 sealed class IdentityStrategy {
     /** A fresh identity, or null when only a process restart can give one. */
-    abstract fun create(): Identity?
+    abstract suspend fun create(): Identity?
 
     /**
      * Clears [identity]'s cookies and storage. Call it only after the WebView that used it is
@@ -51,37 +55,61 @@ sealed class IdentityStrategy {
      */
     abstract fun clear(identity: Identity, done: () -> Unit = {})
 
+    /** Deletes everything [identity] stored, then marks it [Identity.wiped] and calls [done]. */
+    protected fun wipe(identity: Identity, done: () -> Unit) {
+        val clearCookies = {
+            identity.cookies.removeAllCookies {
+                identity.wiped.complete(Unit)
+                done()
+            }
+        }
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA)) {
+            WebStorageCompat.deleteBrowsingData(identity.storage) { clearCookies() }
+        } else {
+            identity.storage.deleteAllData()
+            clearCookies()
+        }
+    }
+
     /**
      * `MULTI_PROFILE`: every identity is a new named profile, and an abandoned one is wiped. The
      * profile itself stays registered: `deleteProfile` refuses a profile loaded in this process, and
      * the next process start removes its directory anyway.
      */
     class Profiles : IdentityStrategy() {
-        override fun create(): Identity {
+        override suspend fun create(): Identity {
             val name = "id-" + UUID.randomUUID().toString().take(12)
             val profile = ProfileStore.getInstance().getOrCreateProfile(name)
             return Identity(name, profile.cookieManager, profile.webStorage)
         }
 
-        override fun clear(identity: Identity, done: () -> Unit) {
-            val clearCookies = { identity.cookies.removeAllCookies { done() } }
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA)) {
-                WebStorageCompat.deleteBrowsingData(identity.storage) { clearCookies() }
-            } else {
-                identity.storage.deleteAllData()
-                clearCookies()
-            }
-        }
+        override fun clear(identity: Identity, done: () -> Unit) = wipe(identity, done)
     }
 
     /**
-     * No `MULTI_PROFILE`: the default profile cannot be wiped reliably in a running process, so it
-     * serves one WebView per process and the next identity restarts the process.
+     * No `MULTI_PROFILE`, but `DELETE_BROWSING_DATA`: every identity is the default profile, wiped in
+     * between. A new identity waits until the one before it is wiped, so the wipe never takes the new
+     * seed with it.
+     */
+    class WipeDefault : IdentityStrategy() {
+        private var last: Identity? = null
+
+        override suspend fun create(): Identity {
+            last?.wiped?.await()
+            return Identity(null, CookieManager.getInstance(), WebStorage.getInstance()).also { last = it }
+        }
+
+        override fun clear(identity: Identity, done: () -> Unit) = wipe(identity, done)
+    }
+
+    /**
+     * Neither: the default profile cannot be wiped reliably in a running process, so it serves one
+     * WebView per process and the next identity restarts the process.
      */
     class RestartProcess : IdentityStrategy() {
         private var used = false
 
-        override fun create(): Identity? {
+        override suspend fun create(): Identity? {
             if (used) return null
             used = true
             return Identity(null, CookieManager.getInstance(), WebStorage.getInstance())
@@ -91,12 +119,18 @@ sealed class IdentityStrategy {
     }
 
     companion object {
-        /** `DELETE_BROWSING_DATA` arrived after `MULTI_PROFILE`, so it never needs its own strategy. */
-        fun choose(multiProfile: Boolean): IdentityStrategy = if (multiProfile) Profiles() else RestartProcess()
+        fun choose(multiProfile: Boolean, deleteBrowsingData: Boolean): IdentityStrategy = when {
+            multiProfile -> Profiles()
+            deleteBrowsingData -> WipeDefault()
+            else -> RestartProcess()
+        }
 
         /** The process-wide strategy for this device's WebView. */
         val process: IdentityStrategy by lazy {
-            choose(WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE))
+            choose(
+                multiProfile = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE),
+                deleteBrowsingData = WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA),
+            )
         }
     }
 }

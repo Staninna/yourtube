@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
 /**
  * The one screen. Each creation is a launch with a new identity (D2): a cold start opens Feeds or
  * Library and loads nothing; after process death, or a process restart for a new identity, it
- * reloads the last URL.
+ * reloads the last URL. A YouTube link from another app opens in Watch.
  */
 class MainActivity : ComponentActivity() {
 
@@ -46,7 +46,10 @@ class MainActivity : ComponentActivity() {
 
         host = WebViewHost(this, app.store.settings, vm, onRestartNeeded = ::restartForNewIdentity)
         (savedInstanceState?.getString(KEY_URL) ?: consumeRestartUrl())?.let(vm::open)
+        // A recreated Activity has opened its link before.
+        if (savedInstanceState == null) openLink(intent)
         lifecycleScope.launch { vm.openRequests.collect(host::load) }
+        lifecycleScope.launch { vm.identityRequests.collect { host.reroll() } }
         lifecycleScope.launch { vm.pagePushes.collect(host::post) }
         app.playback.attach(page)
         lifecycleScope.launch { app.playback.state.map { it.session }.distinctUntilChanged().collect(host::keepPlaying) }
@@ -83,7 +86,22 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         app.playback.setVisible(false)
+        // The next launch is a new identity too; it starts with this one's player choices.
+        host.snapshotPlayerPrefs()
         app.store.flush()
+    }
+
+    /** singleTask: a link tapped or shared while the app runs arrives here. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        openLink(intent)
+    }
+
+    /** Opens the YouTube page another app handed over, as a tapped link or as shared text, in Watch. */
+    private fun openLink(intent: Intent) {
+        // Shared text may be styled; a CharSequence extra reads as null through getStringExtra.
+        val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+        DeepLinks.fromIntent(intent.action, intent.flags, intent.dataString, text)?.let(vm::open)
     }
 
     override fun onDestroy() {

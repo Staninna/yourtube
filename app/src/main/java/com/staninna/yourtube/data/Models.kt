@@ -165,4 +165,6 @@ data class Settings(
     val adBlocking: AdBlocking = AdBlocking(),
     val sponsorBlock: SponsorBlockSettings = SponsorBlockSettings(),
     val pip: PipMode = PipMode.AUTO,
+    /** Whether Watch's top bar shows the new-identity (mask) button. */
+    val showNewIdentity: Boolean = true,
 )

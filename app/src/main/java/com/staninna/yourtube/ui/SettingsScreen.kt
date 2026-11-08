@@ -52,11 +52,9 @@ import com.staninna.yourtube.ui.theme.dynamicColorAvailable
 import kotlinx.coroutines.CancellationException
 
 /**
- * Settings, pushed over the shell. Sections follow the plan's order (Playback, Content, Feed,
- * Appearance, Library, Privacy, About); a section appears once it has a real setting, so today that
- * is Playback, Content (see `ContentSettings`), Feed, Appearance, Library and About. Back, including
- * the predictive back gesture, shrinks the screen toward the swiped edge before it leaves. Manage tags
- * opens over it.
+ * Settings, pushed over the shell, in the plan's order: Playback, Content (see `ContentSettings`),
+ * Feed, Appearance, Library, Privacy and About. Back, including the predictive back gesture, shrinks
+ * the screen toward the swiped edge before it leaves. Manage tags opens over it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -175,6 +173,18 @@ fun SettingsScreen(vm: MainViewModel, snackbars: Snackbars, backup: BackupAction
                         )
                     },
                 ),
+            )
+            Section(
+                "Privacy",
+                listOf { shapes ->
+                    SwitchRow(
+                        "Show new-identity button",
+                        "A mask next to Home in Watch. It shows YouTube a new viewer; your library and history stay.",
+                        SwitchState(settings.showNewIdentity, enabled = true),
+                        vm::setShowNewIdentity,
+                        shapes,
+                    )
+                },
             )
             Section("About", aboutRows(webView, SettingsModel.diagnostics(diagnostics)))
         }
