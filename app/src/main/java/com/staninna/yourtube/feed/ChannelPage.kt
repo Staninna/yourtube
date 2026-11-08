@@ -2,6 +2,7 @@ package com.staninna.yourtube.feed
 
 import com.staninna.yourtube.YouTube
 import com.staninna.yourtube.data.FeedVideo
+import com.staninna.yourtube.data.VideoLength
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -10,13 +11,18 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * A channel's mobile videos page (`m.youtube.com/channel/UC.../videos`), the fallback when its RSS
- * feed does not answer. The page embeds `ytInitialData` as a JavaScript string literal; its grid
- * holds the newest 30 uploads (no Shorts, no live streams) with their age as text, such as "3 days ago".
+ * A channel's mobile pages: its videos page (`m.youtube.com/channel/UC.../videos`), the fallback when
+ * its RSS feed does not answer, and both that and its live page (`/streams`) for the lengths RSS lacks.
+ * Each page embeds `ytInitialData` as a JavaScript string literal. The videos grid holds the newest 30
+ * uploads (no Shorts, no live streams) with their age as text, such as "3 days ago", their view count
+ * and their length; the live grid holds streams, those on air marked LIVE and without a length.
  */
 object ChannelPage {
 
-    fun url(channelId: String) = "${YouTube.HOME}/channel/$channelId/videos"
+    /** The channel pages Feeds reads, by their path. */
+    enum class Tab(val path: String) { VIDEOS("videos"), LIVE("streams") }
+
+    fun url(channelId: String, tab: Tab = Tab.VIDEOS) = "${YouTube.HOME}/channel/$channelId/${tab.path}"
 
     /**
      * The page's uploads, newest first, or null when [html] is not [channelId]'s videos page (a consent
@@ -25,21 +31,64 @@ object ChannelPage {
      * behind the one before it, which keeps that order among videos of the same age.
      */
     fun parse(html: String, channelId: String, now: Long): List<FeedVideo>? {
-        val data = initialData(html) ?: return null
-        val channel = data.obj("metadata")?.obj("channelMetadataRenderer") ?: return null
-        if (channel.text("externalId") != channelId) return null
-        val name = channel.text("title") ?: return null
+        val data = channelData(html, channelId) ?: return null
+        val name = data.obj("metadata")?.obj("channelMetadataRenderer")?.text("title") ?: return null
         val renderers = videoRenderers(data)
         if (renderers.isEmpty()) return emptyList()
         val videos = renderers.mapIndexedNotNull { index, video ->
-            val id = video.text("videoId")?.takeIf { YouTube.VIDEO_ID.matches(it) } ?: return@mapIndexedNotNull null
+            val id = videoId(video) ?: return@mapIndexedNotNull null
             val age = video.obj("publishedTimeText")?.let(::runsText)?.let(RelativeAge::parse) ?: return@mapIndexedNotNull null
             // A video without a title still plays; Feeds shows the channel's name in its place.
             val title = video.obj("title")?.let(::runsText).orEmpty()
-            FeedVideo(id, title, name, channelId, now - age - index)
+            val views = video.obj("viewCountText")?.let(::runsText)?.let(::parseViews)
+            FeedVideo(id, title, name, channelId, now - age - index, views = views, length = lengthOf(video, now))
         }
         // A grid with videos but not one readable age is markup drift, not an empty channel.
         return videos.ifEmpty { null }
+    }
+
+    /**
+     * What [html], one of [channelId]'s pages, says about each listed video's length, by video id: a
+     * length from its length text, or live (checked at [now]) for a stream on air. A video with
+     * neither is left out. Null when [html] is not that channel's page or its data cannot be read.
+     */
+    fun lengths(html: String, channelId: String, now: Long): Map<String, VideoLength>? {
+        val data = channelData(html, channelId) ?: return null
+        return videoRenderers(data).mapNotNull { video ->
+            val id = videoId(video) ?: return@mapNotNull null
+            lengthOf(video, now)?.let { id to it }
+        }.toMap()
+    }
+
+    /** A length as YouTube writes it ("4:05", "1:02:09", "20,843:43:51") in seconds, or null. */
+    internal fun parseLength(text: String): Long? {
+        val parts = text.trim().replace(",", "").split(':').map { it.toLongOrNull() ?: return null }
+        if (parts.size !in 2..3 || parts.drop(1).any { it !in 0..59 } || parts[0] !in 0..MAX_HOURS) return null
+        return parts.fold(0L) { total, part -> total * 60 + part }.takeIf { it > 0 }
+    }
+
+    /** "1,742,245 views", "1 view" or "No views" as a count; null for anything else ("68 watching"). */
+    internal fun parseViews(text: String): Long? {
+        if (text.trim() == "No views") return 0
+        return VIEWS.matchEntire(text.trim())?.groupValues?.get(1)?.replace(",", "")?.toLongOrNull()
+    }
+
+    /** A stream on air carries a LIVE overlay and no length text; anything else, its length if readable. */
+    private fun lengthOf(video: JsonObject, now: Long): VideoLength? {
+        val live = (video["thumbnailOverlays"] as? JsonArray).orEmpty().any {
+            (it as? JsonObject)?.obj("thumbnailOverlayTimeStatusRenderer")?.text("style") == "LIVE"
+        }
+        if (live) return VideoLength.Live(now)
+        return video.obj("lengthText")?.let(::runsText)?.let(::parseLength)?.let(VideoLength::Known)
+    }
+
+    private fun videoId(video: JsonObject): String? = video.text("videoId")?.takeIf { YouTube.VIDEO_ID.matches(it) }
+
+    /** The page's data when it is [channelId]'s own page, else null. */
+    private fun channelData(html: String, channelId: String): JsonObject? {
+        val data = initialData(html) ?: return null
+        val channel = data.obj("metadata")?.obj("channelMetadataRenderer") ?: return null
+        return data.takeIf { channel.text("externalId") == channelId }
     }
 
     /** The decoded `ytInitialData` object, or null when the page has none or it does not parse. */
@@ -149,6 +198,11 @@ object ChannelPage {
     private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
 
     private const val MARKER = "var ytInitialData = '"
+
+    /** Streams that ran for years show over 20,000 hours; ten times that is not a length. */
+    private const val MAX_HOURS = 200_000L
+
+    private val VIEWS = Regex("""(\d[\d,]*) views?""")
 
     /** Real pages nest 26 levels (mobile) to 41 (desktop); far past that is not a page. */
     private const val MAX_DEPTH = 128

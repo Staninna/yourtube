@@ -41,12 +41,12 @@ import kotlin.math.roundToInt
 sealed interface MediaLeading {
     /**
      * A 16:9 still. [url] null shows [fallbackIcon] on a tinted block. [progress] draws the watched
-     * bar and dims finished videos; [duration] is a badge such as `12:34`.
+     * bar and dims finished videos; [badge] is the length (`12:34`) or what stands in for one (`LIVE`).
      */
     data class Thumbnail(
         val url: String?,
         val progress: WatchProgress? = null,
-        val duration: String? = null,
+        val badge: String? = null,
         val fallbackIcon: ImageVector? = null,
     ) : MediaLeading
 
@@ -56,7 +56,8 @@ sealed interface MediaLeading {
 
 /**
  * The one list row for videos, channels and playlists across Feeds, Library and History: a leading
- * still or avatar, a two-line title, a one-line subtitle and an optional trailing action.
+ * still or avatar, a two-line title, a one-line subtitle, an optional detail line under it (Feeds
+ * only) and an optional trailing action.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -71,8 +72,10 @@ fun MediaRow(
     onLongClickLabel: String? = null,
     /** Something small before the subtitle, such as Feeds' channel avatar. */
     subtitleLeading: (@Composable () -> Unit)? = null,
-    /** Text after the subtitle, as " · [subtitleEnd]", that a long subtitle never cuts (Feeds' age). */
+    /** Text after the subtitle, as " · [subtitleEnd]", that a long subtitle never cuts (History's time left). */
     subtitleEnd: String? = null,
+    /** A line under the subtitle, such as Feeds' views and age. */
+    detail: String? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val progress = (leading as? MediaLeading.Thumbnail)?.progress
@@ -128,6 +131,15 @@ fun MediaRow(
                     }
                 }
             }
+            detail?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         trailing?.invoke()
     }
@@ -155,12 +167,12 @@ private fun Thumbnail(thumb: MediaLeading.Thumbnail, modifier: Modifier) {
         }
         // The badge sits above the watched bar when there is one.
         val badgeBottom = if (thumb.progress != null) 16.dp else 6.dp
-        thumb.duration?.let { Badge(it, Modifier.align(Alignment.BottomEnd).padding(end = 6.dp, bottom = badgeBottom)) }
+        thumb.badge?.let { Badge(it, Modifier.align(Alignment.BottomEnd).padding(end = 6.dp, bottom = badgeBottom)) }
         thumb.progress?.let { WatchedBar(it.fraction, Modifier.align(Alignment.BottomCenter)) }
     }
 }
 
-/** A time badge on a still, white on translucent black like YouTube's, legible on any image. */
+/** A length or LIVE badge on a still, white on translucent black like YouTube's, legible on any image. */
 @Composable
 private fun Badge(text: String, modifier: Modifier) {
     Surface(modifier, shape = RoundedCornerShape(6.dp), color = Color.Black.copy(alpha = 0.75f), contentColor = Color.White) {

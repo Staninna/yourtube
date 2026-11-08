@@ -61,7 +61,7 @@ class PipFlowsTest {
         vm = MainViewModel(
             store,
             ChannelResolver(store, CoroutineScope(SupervisorJob() + Dispatchers.Default)),
-            FeedFetcher { ChannelFetch.Ok(emptyList(), FeedSource.RSS) },
+            FeedFetcher { _, _ -> ChannelFetch.Ok(emptyList(), FeedSource.RSS) },
             SegmentSource { _, _ -> emptyList() },
             hub,
         )

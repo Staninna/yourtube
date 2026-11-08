@@ -196,4 +196,13 @@ class FeedRulesTest {
         assertEquals(Status.NO_VIDEOS, view(res, lib = only, removeShorts = true).status)
         assertEquals(Status.LIST, view(res, lib = only).status)
     }
+
+    @Test fun latestUploadsAreEachChannelsNewestVideoShortsAside() {
+        val res = FeedResults()
+            .finish("A", ok(video("s1", "A", 90).copy(isShort = true), video("a1", "A", 50)))
+            .finish("C", ok(video("s2", "C", 60).copy(isShort = true)))
+            .finish("B", ChannelFetch.Failed(FetchFailure.OFFLINE))
+        assertEquals(mapOf("A" to 90L, "C" to 60L), FeedRules.latestUploads(res, removeShorts = false))
+        assertEquals(mapOf("A" to 50L), FeedRules.latestUploads(res, removeShorts = true))
+    }
 }

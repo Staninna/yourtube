@@ -108,7 +108,7 @@ sealed interface PageIdentity {
             val title = player.title?.takeIf { it.isNotBlank() } ?: return null
             if (player.videoId != videoId) return null
             // The channel id is kept only when it has the UC shape; anything else is markup drift.
-            return VideoMeta(videoId, title, player.author, player.channelId?.takeIf(YouTube.CHANNEL_ID::matches))
+            return VideoMeta(videoId, title, player.author, player.channelId?.takeIf(YouTube.CHANNEL_ID::matches), live = player.live)
         }
 
         private fun trustedTitle(base: PageIdentity, report: PageReport): String? {

@@ -70,7 +70,7 @@ class FeedsFlowsTest {
     /** While set, every fetch waits for it. */
     @Volatile private var hold: CompletableDeferred<Unit>? = null
 
-    private val fetcher = FeedFetcher { id ->
+    private val fetcher = FeedFetcher { id, _ ->
         hold?.await()
         queued[id]?.poll() ?: uploads(id)
     }

@@ -1,5 +1,6 @@
 package com.staninna.yourtube.feed
 
+import com.staninna.yourtube.data.VideoLength
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -87,5 +88,41 @@ class ChannelPageTest {
         val source = """x = '\x7b\x22a\x22:\x22\\u00e9\/\u00e9\n\x27\x22\x7d'; rest"""
         assertEquals("{\"a\":\"\\u00e9/é\n'\"}", ChannelPage.jsStringLiteral(source, source.indexOf('\'') + 1))
         assertNull("an unterminated literal", ChannelPage.jsStringLiteral("'abc", 1))
+    }
+
+    @Test fun aRealVideosPageGivesViewsAndLengths() {
+        val videos = ChannelPage.parse(fixture, uc, now)!!
+        assertEquals(listOf(109_308L, 243_508L, 569_297L), videos.map { it.views })
+        assertEquals(listOf(73L, 39L, 28_800L).map(VideoLength::Known), videos.map { it.length })
+    }
+
+    @Test fun aRealLivePageMarksStreamsOnAirAndKeepsLengthsOfPastOnes() {
+        val streams = checkNotNull(javaClass.classLoader?.getResource("feed/streams-page.html")).readText()
+        assertEquals(
+            mapOf(
+                "5qap5aO4i9A" to VideoLength.Known(20_843L * 3600 + 43 * 60 + 51),
+                "4xDzrJKXOOY" to VideoLength.Live(now),
+                "0sfDth4lMLc" to VideoLength.Live(now),
+            ),
+            ChannelPage.lengths(streams, uc, now),
+        )
+        assertNull("another channel's page", ChannelPage.lengths(streams, "UCuAXFkgsw1L7xaCfnd5JJOw", now))
+        assertEquals("the videos page has a length for each", 3, ChannelPage.lengths(fixture, uc, now)!!.size)
+    }
+
+    @Test fun lengthsReadAsYouTubeWritesThem() {
+        assertEquals(39L, ChannelPage.parseLength("0:39"))
+        assertEquals(245L, ChannelPage.parseLength("4:05"))
+        assertEquals(3729L, ChannelPage.parseLength("1:02:09"))
+        assertEquals(75_037_431L, ChannelPage.parseLength("20,843:43:51"))
+        listOf("", "LIVE", "12", "1:2:3:4", "1:60", "0:00", "-1:00", "1:-5").forEach { assertNull(it, ChannelPage.parseLength(it)) }
+    }
+
+    @Test fun viewCountsReadAsYouTubeWritesThem() {
+        assertEquals(1_742_245L, ChannelPage.parseViews("1,742,245 views"))
+        assertEquals(1L, ChannelPage.parseViews("1 view"))
+        assertEquals(0L, ChannelPage.parseViews("No views"))
+        assertNull("viewers of a stream are not views", ChannelPage.parseViews("1,071 watching"))
+        assertNull(ChannelPage.parseViews("1.7M views"))
     }
 }

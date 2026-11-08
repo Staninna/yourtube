@@ -69,6 +69,8 @@ data class PlayerFacts(
     val channelId: String? = null,
     val title: String? = null,
     val author: String? = null,
+    /** `videoDetails.isLive`: a stream on air. */
+    val live: Boolean = false,
 )
 
 /**

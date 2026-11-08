@@ -79,6 +79,8 @@ data class VideoMeta(
     val author: String?,
     /** Null when the player response had no well-formed UC id (markup drift). */
     val channelId: String?,
+    /** A stream on air when the player last confirmed it; its duration is then the replay window, not a length. */
+    val live: Boolean = false,
 )
 
 /**
@@ -100,6 +102,9 @@ data class HistoryEntry(
 
     /** Position over duration, 0 to 1; null until the player has reported a duration. */
     val fraction: Float? get() = if (duration > 0.0) (position / duration).toFloat().coerceIn(0f, 1f) else null
+
+    /** The video's length in seconds; null until the player reported one, and for a stream on air. */
+    val length: Double? get() = duration.takeIf { it > 0.0 && meta?.live != true }
 }
 
 /** A channel's canonical id, display name and avatar, as read from its own page. */
@@ -124,9 +129,34 @@ data class FeedVideo(
     val publishedAt: Long,
     /** RSS links a Short to `/shorts/<id>`. The videos page lists no Shorts, so its videos are never one. */
     val isShort: Boolean = false,
+    /** The view count when it was fetched; null when the source gave none. */
+    val views: Long? = null,
+    /** RSS has no lengths; they come from the channel's pages. Null until those were read. */
+    val length: VideoLength? = null,
 ) {
     val url: String get() = YouTube.watchUrl(videoId)
     val thumbnail: String get() = YouTube.thumbnail(videoId)
+}
+
+/**
+ * What a channel's pages said about a feed video's length. A length never changes, so it is kept for
+ * good; the other two carry when they were read, so the pages can be asked again later.
+ */
+@Serializable
+sealed interface VideoLength {
+    @Serializable
+    @SerialName("known")
+    data class Known(val seconds: Long) : VideoLength
+
+    /** Streaming now: no length until the stream ends. */
+    @Serializable
+    @SerialName("live")
+    data class Live(val checkedAt: Long) : VideoLength
+
+    /** On neither the videos nor the live page (a premiere, a members-only video, a page that lags). */
+    @Serializable
+    @SerialName("unlisted")
+    data class Unlisted(val checkedAt: Long) : VideoLength
 }
 
 /** How many videos Feeds shows at first and adds with each Load more. Stored by its count. */

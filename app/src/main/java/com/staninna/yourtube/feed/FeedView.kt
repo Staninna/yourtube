@@ -158,6 +158,15 @@ object FeedRules {
         )
     }
 
+    /**
+     * Each channel's newest upload time in [results], for Library's Subs rows; with [removeShorts] a
+     * Short does not count. A channel without a video Feeds would show has none.
+     */
+    fun latestUploads(results: FeedResults, removeShorts: Boolean): Map<String, Long> =
+        results.channels.mapNotNull { (id, feed) ->
+            feed.videos.orEmpty().filterNot { removeShorts && it.isShort }.maxOfOrNull { it.publishedAt }?.let { id to it }
+        }.toMap()
+
     /** The stored selection after tapping [tagId], by Library's Subs rule. */
     fun toggleChip(library: Library, stored: Set<String>, tagId: String): Set<String> =
         LibraryFilter.toggleChip(library, ItemType.CHANNEL, stored, tagId)

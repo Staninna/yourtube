@@ -3,9 +3,11 @@ package com.staninna.yourtube.ui
 import com.staninna.yourtube.UiEvent
 import com.staninna.yourtube.data.BackupProblem
 import com.staninna.yourtube.data.HistoryDay
+import com.staninna.yourtube.data.HistoryEntry
 import com.staninna.yourtube.data.ImportReport
 import com.staninna.yourtube.data.ItemType
 import com.staninna.yourtube.data.StarredItem
+import com.staninna.yourtube.data.VideoMeta
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -18,11 +20,34 @@ class LibraryTextTest {
     private fun item(type: ItemType, author: String?) = StarredItem("x", type, "T", author = author, url = "u")
 
     @Test fun subtitlesNameTheOwnerThenTheTags() {
-        assertEquals("Someone · Music, Talks", librarySubtitle(item(ItemType.VIDEO, "Someone"), listOf("Music", "Talks")))
-        assertEquals("Someone", librarySubtitle(item(ItemType.PLAYLIST, "Someone"), emptyList()))
-        assertEquals("Music", librarySubtitle(item(ItemType.CHANNEL, "Its own name"), listOf("Music")))
-        assertNull(librarySubtitle(item(ItemType.CHANNEL, "Its own name"), emptyList()))
-        assertNull(librarySubtitle(item(ItemType.VIDEO, " "), emptyList()))
+        assertEquals("Someone · Music, Talks", librarySubtitle(item(ItemType.VIDEO, "Someone"), listOf("Music", "Talks"), null, 0))
+        assertEquals("Someone", librarySubtitle(item(ItemType.PLAYLIST, "Someone"), emptyList(), null, 0))
+        assertEquals("Music", librarySubtitle(item(ItemType.CHANNEL, "Its own name"), listOf("Music"), null, 0))
+        assertNull(librarySubtitle(item(ItemType.CHANNEL, "Its own name"), emptyList(), null, 0))
+        assertNull(librarySubtitle(item(ItemType.VIDEO, " "), emptyList(), null, 0))
+    }
+
+    @Test fun aChannelLeadsWithItsLatestUpload() {
+        val day = 24 * 60 * 60 * 1000L
+        val channel = item(ItemType.CHANNEL, "Its own name")
+        assertEquals("Uploaded 3 days ago · Music", librarySubtitle(channel, listOf("Music"), latestUpload = 0, now = 3 * day))
+        assertEquals("Uploaded just now", librarySubtitle(channel, emptyList(), latestUpload = 0, now = 1))
+        assertEquals("only channels", "Someone", librarySubtitle(item(ItemType.VIDEO, "Someone"), emptyList(), latestUpload = 0, now = day))
+    }
+
+    private fun watched(position: Double, duration: Double) = HistoryEntry("aaaaaaaaaaa", position = position, duration = duration, watchedAt = 0)
+
+    @Test fun timeLeftIsForVideosStoppedPartway() {
+        assertEquals("12 min left", timeLeft(watched(position = 600.0, duration = 1300.0)))
+        assertEquals("rounded up", "1 min left", timeLeft(watched(position = 600.0, duration = 620.0)))
+        assertEquals("1 hr 5 min left", timeLeft(watched(position = 60.0, duration = 3960.0)))
+        assertEquals("2 hr left", timeLeft(watched(position = 60.0, duration = 7260.0)))
+        assertNull("barely started", timeLeft(watched(position = 2.0, duration = 600.0)))
+        assertNull("watched", timeLeft(watched(position = 590.0, duration = 600.0)))
+        assertNull("no length yet", timeLeft(watched(position = 30.0, duration = 0.0)))
+        val onAir = watched(position = 600.0, duration = 1300.0).copy(meta = VideoMeta("aaaaaaaaaaa", "T", null, null, live = true))
+        assertNull("a stream on air has a replay window, not a length", timeLeft(onAir))
+        assertNull(onAir.length)
     }
 
     @Test fun pluralsPickTheNoun() {

@@ -143,7 +143,8 @@ private fun HistoryRow(entry: HistoryEntry, onOpen: () -> Unit, onRemove: () -> 
         MediaRow(
             title = entry.meta?.title ?: "Untitled video",
             subtitle = entry.meta?.author,
-            leading = MediaLeading.Thumbnail(entry.thumbnail, WatchProgress.of(entry), formatDuration(entry.duration)),
+            subtitleEnd = timeLeft(entry),
+            leading = MediaLeading.Thumbnail(entry.thumbnail, WatchProgress.of(entry), entry.length?.let(::formatDuration)),
             onClick = onOpen,
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.background)

@@ -57,7 +57,6 @@ import com.staninna.yourtube.ui.components.TabScaffold
 @Composable
 fun LibraryScreen(vm: MainViewModel, onSearch: () -> Unit, onSettings: () -> Unit) {
     val view by vm.library.view.collectAsStateWithLifecycle()
-    val progress by vm.progress.collectAsStateWithLifecycle()
     TabScaffold(title = "Library", onSearch = onSearch, onSettings = onSettings) { padding ->
         if (view.emptyReason == LibraryView.EmptyReason.LIBRARY) {
             EmptyState(
@@ -107,7 +106,7 @@ fun LibraryScreen(vm: MainViewModel, onSearch: () -> Unit, onSettings: () -> Uni
                         body = "No ${segment.label.lowercase()} have that in their name or channel.",
                         action = StateAction("Clear search") { setQuery("") },
                     )
-                    else -> LibraryList(view, progress, vm)
+                    else -> LibraryList(view, vm)
                 }
             }
         }
@@ -115,13 +114,18 @@ fun LibraryScreen(vm: MainViewModel, onSearch: () -> Unit, onSettings: () -> Uni
 }
 
 @Composable
-private fun LibraryList(view: LibraryView, progress: Map<String, WatchProgress>, vm: MainViewModel) {
+private fun LibraryList(view: LibraryView, vm: MainViewModel) {
+    val progress by vm.progress.collectAsStateWithLifecycle()
+    val lengths by vm.lengths.collectAsStateWithLifecycle()
+    val latestUploads by vm.feeds.latestUploads.collectAsStateWithLifecycle()
+    // Ages in Library only need to be right when the list is drawn; Feeds is where they tick.
+    val now = remember(latestUploads) { System.currentTimeMillis() }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
         items(view.items, key = { it.id }) { item ->
             MediaRow(
                 title = item.title,
-                subtitle = librarySubtitle(item, LibraryFilter.tagNames(item, view.chips)),
-                leading = leading(item, progress),
+                subtitle = librarySubtitle(item, LibraryFilter.tagNames(item, view.chips), latestUploads[item.id], now),
+                leading = leading(item, progress, lengths),
                 onClick = { vm.open(item.url) },
                 onLongClick = { vm.library.openTagSheet(item.id) },
                 onLongClickLabel = "Edit tags",
@@ -149,9 +153,10 @@ private fun LibrarySearch(text: String, onChange: (String) -> Unit, what: String
     )
 }
 
-private fun leading(item: StarredItem, progress: Map<String, WatchProgress>): MediaLeading = when (item.type) {
+private fun leading(item: StarredItem, progress: Map<String, WatchProgress>, lengths: Map<String, Double>): MediaLeading = when (item.type) {
     ItemType.CHANNEL -> MediaLeading.Avatar(item.title, key = item.channelId ?: item.id, url = item.thumbnail)
-    ItemType.VIDEO -> MediaLeading.Thumbnail(item.thumbnail, progress[item.id])
+    // A starred video was nearly always played, so history knows its length.
+    ItemType.VIDEO -> MediaLeading.Thumbnail(item.thumbnail, progress[item.id], lengths[item.id]?.let(::formatDuration))
     ItemType.PLAYLIST -> MediaLeading.Thumbnail(item.thumbnail, fallbackIcon = Icons.AutoMirrored.Filled.PlaylistPlay)
 }
 

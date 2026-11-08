@@ -73,6 +73,11 @@ class PageIdentityTest {
         assertEquals(Video(v1, VideoMeta(v1, "Title of $v1", "Author", uc)), page)
     }
 
+    @Test fun aStreamOnAirIsMarkedLive() {
+        val page = PageIdentity.derive(watch1, report(watch1, facts(v1).copy(live = true)))
+        assertEquals(true, (page as Video).meta?.live)
+    }
+
     @Test fun playerFactsForAnotherVideoAreIgnored() {
         // After SPA navigation the URL moves first; the player still describes the previous video.
         assertEquals(Video(v2, null), PageIdentity.derive(watch2, report(watch2, facts(v1))))

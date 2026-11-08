@@ -57,7 +57,10 @@
       var response = playerResponse()
       var d = response && response.videoDetails
       if (!d) return null
-      return { videoId: d.videoId || null, channelId: d.channelId || null, title: d.title || null, author: d.author || null }
+      return {
+        videoId: d.videoId || null, channelId: d.channelId || null, title: d.title || null, author: d.author || null,
+        live: d.isLive === true,
+      }
     }
 
     // Whether the player may play, so the app can tell a bot check. On the first load the player may not

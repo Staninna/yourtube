@@ -10,7 +10,10 @@ import java.io.StringReader
 import java.time.OffsetDateTime
 import java.time.format.DateTimeParseException
 
-/** A channel's public Atom feed: its newest 15 uploads with exact publish times. No login, no key. */
+/**
+ * A channel's public Atom feed: its newest 15 uploads with exact publish times and view counts, but no
+ * lengths. No login, no key.
+ */
 object RssFeed {
 
     fun url(channelId: String) = "https://www.youtube.com/feeds/videos.xml?channel_id=$channelId"
@@ -53,6 +56,7 @@ object RssFeed {
                     name == "name" && inAuthor -> entry.author = parser.nextText().trim()
                     name == "published" -> entry.published = parseInstant(parser.nextText().trim())
                     name == "link" -> entry.link = parser.getAttributeValue(null, "href").orEmpty()
+                    name == "media:statistics" -> entry.views = parser.getAttributeValue(null, "views")?.toLongOrNull()?.takeIf { it >= 0 }
                 }
                 XmlPullParser.END_TAG -> when (name) {
                     "feed" -> closed = true
@@ -83,6 +87,7 @@ object RssFeed {
         var title = "" // blank when missing, see parse
         var author = ""
         var published: Long? = null
+        var views: Long? = null
 
         /** The entry's `<link href>`: `/watch?v=` for a video, `/shorts/` for a Short. */
         var link = ""
@@ -90,7 +95,7 @@ object RssFeed {
         fun toVideo(): FeedVideo? {
             val at = published ?: return null
             if (!YouTube.VIDEO_ID.matches(videoId) || !YouTube.CHANNEL_ID.matches(channelId)) return null
-            return FeedVideo(videoId, title, author, channelId, at, isShort = link.contains("/shorts/"))
+            return FeedVideo(videoId, title, author, channelId, at, isShort = link.contains("/shorts/"), views = views)
         }
     }
 }

@@ -14,6 +14,7 @@ import com.staninna.yourtube.feed.FetchFailure
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
@@ -51,7 +52,7 @@ class FeedsModelTest {
     private fun videos(channelId: String, count: Int, newest: Long = 1_000, first: Int = 0) =
         ChannelFetch.Ok(List(count) { video(channelId, first + it, newest - it) }, FeedSource.RSS)
 
-    private val fake = FeedFetcher { id ->
+    private val fake = FeedFetcher { id, _ ->
         calls += id
         gate?.await()
         answers[id]?.removeFirstOrNull() ?: ChannelFetch.Ok(emptyList(), FeedSource.RSS)
@@ -123,7 +124,7 @@ class FeedsModelTest {
 
     @Test fun aFetcherThatThrowsFailsItsChannelWithoutCrashing() = runTest {
         answer("A", videos("A", 2))
-        val model = model("A", "B", fetcher = FeedFetcher { id ->
+        val model = model("A", "B", fetcher = FeedFetcher { id, _ ->
             if (id == "B") error("a bug in the fetcher")
             answers.getValue(id).removeFirst()
         })
@@ -132,6 +133,48 @@ class FeedsModelTest {
         assertEquals(2, view.videos.size)
         assertEquals(listOf("B"), view.failed.map { it.id })
         assertFalse(view.loading)
+    }
+
+    @Test fun eachFetchGetsTheChannelsLastListSoLengthsCarryOver() = runTest {
+        val seen = mutableListOf<List<String>>()
+        answer("A", videos("A", 2), videos("A", 1, first = 5))
+        val model = model("A", fetcher = FeedFetcher { id, known ->
+            seen += known.map { it.videoId }
+            answers.getValue(id).removeFirst()
+        })
+        runCurrent()
+        model.refresh()
+        runCurrent()
+        assertEquals(listOf(emptyList(), listOf("A%010d".format(0), "A%010d".format(1))), seen)
+    }
+
+    @Test fun theCacheIsWrittenOnceWhenTheLastChannelIsDone() = runTest {
+        answer("A", videos("A", 2), videos("A", 3))
+        answer("B", videos("B", 2), ChannelFetch.Failed(FetchFailure.OFFLINE), videos("B", 4))
+        answer("C", videos("C", 2), videos("C", 1, first = 7))
+        openStore()
+        val writes = mutableListOf<Map<String, List<FeedVideo>>>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { store.feeds.collect { writes += it } }
+        val model = model("A", "B", "C")
+        runCurrent()
+        assertEquals("the start, then one write for all three", 2, writes.size)
+        assertEquals(setOf("A", "B", "C"), writes.last().keys)
+
+        model.refresh()
+        runCurrent()
+        assertEquals(3, writes.size)
+
+        model.retryFailed()
+        runCurrent()
+        assertEquals("a retry of one channel writes too", 4, writes.size)
+        assertEquals(4, store.feeds.value.getValue("B").size)
+    }
+
+    @Test fun libraryGetsEachChannelsLatestUpload() = runTest {
+        answer("A", videos("A", 2, newest = 500))
+        val model = model("A", "B")
+        runCurrent()
+        assertEquals(mapOf("A" to 500L), model.latestUploads.value)
     }
 
     @Test fun loadMoreRevealsAnotherPageAndChipsStartOver() = runTest {
@@ -235,7 +278,7 @@ class FeedsModelTest {
         var running = 0
         var peak = 0
         val ids = List(10) { "C$it" }.toTypedArray()
-        val model = model(*ids, fetcher = FeedFetcher {
+        val model = model(*ids, fetcher = FeedFetcher { _, _ ->
             running++
             peak = maxOf(peak, running)
             release.await()

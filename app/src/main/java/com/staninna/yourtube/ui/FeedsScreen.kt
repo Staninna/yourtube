@@ -63,7 +63,6 @@ import com.staninna.yourtube.Tab
 import com.staninna.yourtube.data.FeedVideo
 import com.staninna.yourtube.data.WatchProgress
 import com.staninna.yourtube.feed.FeedView
-import com.staninna.yourtube.feed.RelativeAge
 import com.staninna.yourtube.ui.components.ChannelAvatar
 import com.staninna.yourtube.ui.components.ChipOption
 import com.staninna.yourtube.ui.components.EmptyState
@@ -254,8 +253,8 @@ private fun FeedRow(
     MediaRow(
         title = video.title,
         subtitle = video.author,
-        subtitleEnd = RelativeAge.format(video.publishedAt, now),
-        leading = MediaLeading.Thumbnail(video.thumbnail, progress),
+        detail = feedDetail(video, now),
+        leading = MediaLeading.Thumbnail(video.thumbnail, progress, feedBadge(video)),
         onClick = { onOpen(video.url) },
         subtitleLeading = { ChannelAvatar(video.author, video.channelId, avatar, size = 20.dp) },
         modifier = modifier,

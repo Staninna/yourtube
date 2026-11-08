@@ -74,13 +74,24 @@ class StoreTest {
     @Test fun theFeedCacheIsCappedReadBackAndLeftOutOfBackups() = runTest {
         val store = store()
         val uc = "UC" + "a".repeat(22)
-        val videos = List(40) { FeedVideo("v%010d".format(it), "Video $it", "Channel", uc, 1_000L - it) }
+        val lengths = listOf(VideoLength.Known(754), VideoLength.Live(5), VideoLength.Unlisted(6), null)
+        val videos = List(40) { FeedVideo("v%010d".format(it), "Video $it", "Channel", uc, 1_000L - it, views = it * 1_000L, length = lengths[it % 4]) }
         store.cacheFeeds(mapOf(uc to videos))
         runCurrent()
         val reloaded = store()
         assertEquals(videos.take(Store.FEED_CACHE_PER_CHANNEL), reloaded.feeds.value.getValue(uc))
         assertTrue(reloaded.corruptFiles.isEmpty())
         assertFalse("a cache is no backup", BackupCodec.encode(reloaded.backup()).contains("Video 1"))
+    }
+
+    @Test fun aFeedCacheFromBeforeViewsAndLengthsStillReads() = runTest {
+        val uc = "UC" + "a".repeat(22)
+        File(dir, "feeds.json").writeText(
+            """{"schemaVersion":1,"data":{"$uc":[{"videoId":"aaaaaaaaaaa","title":"T","author":"A","channelId":"$uc","publishedAt":5,"isShort":false}]}}""",
+        )
+        val video = store().feeds.value.getValue(uc).single()
+        assertNull(video.views)
+        assertNull(video.length)
     }
 
     @Test fun concurrentUpdatesAreAllKept() = runTest {

@@ -76,4 +76,13 @@ class RssFeedTest {
         </feed>"""
         assertEquals(listOf("Kept"), RssFeed.parse(xml, uc)!!.map { it.title })
     }
+
+    @Test fun viewCountsComeFromMediaStatistics() {
+        assertEquals(listOf(774_212L, 2_580_512L, 1_330_418L), RssFeed.parse(fixture("rss-ltt.xml"), uc)!!.map { it.views })
+        val xml = """<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+            <entry><yt:videoId>dQw4w9WgXcQ</yt:videoId><yt:channelId>$uc</yt:channelId><published>2026-01-02T10:00:00Z</published></entry>
+            <entry><yt:videoId>aaaaaaaaaaa</yt:videoId><yt:channelId>$uc</yt:channelId><published>2026-01-02T10:00:00Z</published><media:statistics views="many"/></entry>
+        </feed>"""
+        assertEquals(listOf(null, null), RssFeed.parse(xml, uc)!!.map { it.views })
+    }
 }

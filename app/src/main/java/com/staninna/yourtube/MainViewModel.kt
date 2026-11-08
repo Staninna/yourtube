@@ -92,6 +92,11 @@ class MainViewModel(
         .map { history -> history.mapNotNull { e -> WatchProgress.of(e)?.let { e.videoId to it } }.toMap() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
+    /** Video lengths the player reported, in seconds by video id, for the badges on Library's video rows. */
+    val lengths: StateFlow<Map<String, Double>> = store.history
+        .map { history -> history.mapNotNull { e -> e.length?.let { e.videoId to it } }.toMap() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
     private val _events = Channel<UiEvent>(Channel.BUFFERED)
 
     /** One-off notices for the snackbar. */

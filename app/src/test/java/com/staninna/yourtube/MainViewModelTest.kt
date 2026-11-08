@@ -54,7 +54,7 @@ class MainViewModelTest {
     private lateinit var store: Store
     private lateinit var hub: PlaybackHub
 
-    private val noFeeds = FeedFetcher { ChannelFetch.Ok(emptyList(), FeedSource.RSS) }
+    private val noFeeds = FeedFetcher { _, _ -> ChannelFetch.Ok(emptyList(), FeedSource.RSS) }
     private val noSegments = SegmentSource { _, _ -> emptyList() }
 
     private fun TestScope.viewModel(): Pair<MainViewModel, Channel<String>> {

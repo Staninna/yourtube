@@ -49,6 +49,11 @@ class FeedsModel(
         store.settings.value.let { FeedRules.view(store.library.value, results.value, controls.value, it.feedPageSize, it.removeShorts) },
     )
 
+    /** Each channel's newest upload time, for Library's Subs rows. */
+    val latestUploads: StateFlow<Map<String, Long>> = combine(results, store.settings) { res, settings ->
+        FeedRules.latestUploads(res, settings.removeShorts)
+    }.stateIn(scope, SharingStarted.Eagerly, FeedRules.latestUploads(results.value, store.settings.value.removeShorts))
+
     init {
         // New subscriptions, the first batch included, are fetched as they appear; gone ones leave.
         scope.launch {
@@ -99,7 +104,7 @@ class FeedsModel(
         // A cancelled fetch counts as failed, so the channel always leaves the loading set.
         var outcome: ChannelFetch = ChannelFetch.Failed(FetchFailure.UNAVAILABLE)
         try {
-            outcome = gate.withPermit { fetcher.fetch(channelId) }
+            outcome = gate.withPermit { fetcher.fetch(channelId, results.value.channels[channelId]?.videos.orEmpty()) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -108,7 +113,8 @@ class FeedsModel(
         } finally {
             val subscribed = channelId in FeedRules.subscriptions(store.library.value)
             results.update { if (subscribed) it.finish(channelId, outcome) else it.abandon(channelId) }
-            store.cacheFeeds(results.value.cache())
+            // One write when the last fetch in flight ends, not one per channel: the file holds them all.
+            if (results.value.loading.isEmpty()) store.cacheFeeds(results.value.cache())
         }
         when (val o = outcome) {
             is ChannelFetch.Ok -> if (o.source == FeedSource.PAGE) Diagnostics.count("feed.rss.fallback", channelId)

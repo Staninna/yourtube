@@ -68,3 +68,46 @@ Known gaps: the page path drops Shorts and live streams, while RSS includes them
 list can change shape between refreshes (stage 6 filters Shorts). Ages from the page are coarse
 ("1 month ago"), so videos from different channels can interleave out of true order. Diagnostics
 count `feed.rss.fallback` and `feed.unreadable` (markup drift).
+
+## Lengths and view counts
+
+Measured 8 November 2026, 08:45 to 09:00 UTC, from the same machine with the app's request shape
+(mobile Chrome UA, `SOCS` reject-all, `Accept-Language: en`). Question: where do Feeds' rows get a
+video's length and view count without a login or a key, in few requests?
+
+- **RSS has view counts, no lengths.** Each entry carries `<media:statistics views="774212"/>` and a
+  star rating, and nothing about duration (no `duration` attribute or element anywhere in 20 feeds).
+- **The videos page has both, 30 at a time.** Each `compactVideoRenderer` on
+  `m.youtube.com/channel/UC.../videos` has `lengthText` ("25:59", "1:04:42"), `viewCountText`
+  ("1,742,245 views", exact) and `shortViewCountText` ("1.7M views"). About 530 KB per page.
+- **Live streams live on `/streams`.** RSS lists them (Lofi Girl: 3 of its 5 non-Short entries were
+  24/7 streams), the videos page does not. The live page lists them as `compactVideoRenderer` too:
+  a stream on air has no `lengthText` and a `thumbnailOverlayTimeStatusRenderer` with style `LIVE`;
+  a finished one has its length, with thousands separators for very long ones ("20,843:43:51").
+- **The uploads playlist is worse.** `m.youtube.com/playlist?list=UU...` (every upload, one
+  request) now renders `lockupViewModel` items, 20 per page and without `lengthText`.
+- **No upcoming premiere or stream** turned up on the five channels checked, so its markup is not
+  known; such a video gets no badge.
+
+One sweep of 20 channels, six at a time, each doing RSS, then its videos page, then its live page
+only when RSS still had a non-Short video without a length: 42 requests, all HTTP 200, 5.3 s in
+total. 195 of the 196 non-Short RSS videos got a length or LIVE: 183 from the videos page and 12
+from the live page (NASA 10, one of them on air; Lofi Girl 2, both on air). One Lofi Girl 24/7
+stream was on neither page's first screen. Shorts are on neither page and were not looked up.
+
+### Decision
+
+Lengths are read per channel in `YouTubeFeedFetcher`, after RSS, and only when a video wants one:
+
+1. A video keeps the length it had in the last list (lengths never change), so a channel without
+   new uploads costs RSS alone.
+2. Otherwise the videos page, one try; for what it lacks, the live page, one try. A failure stops
+   there and leaves the rest without a length, so the next refresh asks again.
+3. A stream on air, or a video on neither page, is asked about again after 6 hours.
+4. When RSS fails, the videos-page fallback already carries lengths and exact view counts.
+
+Cost per refresh with N channels: N RSS requests (up to 2N while it flaps), plus one videos page
+per channel with a new non-Short upload, plus one live page where that page lacked one. The first
+refresh after this change reads the pages for every channel once (about 2N). On the emulator's
+first refresh the live page of one channel failed once; the next refresh filled it.
+
