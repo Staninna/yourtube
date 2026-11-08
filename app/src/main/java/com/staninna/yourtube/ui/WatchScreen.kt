@@ -98,8 +98,10 @@ fun WatchScreen(
             BotCheckBanner(onNewIdentity = vm::newIdentity)
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            // The error state covers the page too, so TalkBack skips it then.
-            WebViewSlot(host, Modifier.fillMaxSize(), covered = covered || nav.error != null)
+            // The error state and the stale cover hide the page too, so TalkBack skips it then.
+            WebViewSlot(host, Modifier.fillMaxSize(), covered = covered || nav.error != null || nav.stale)
+            // YouTube's background until the asked-for page draws; it takes the touches meant for the old one.
+            if (nav.stale) Surface(Modifier.fillMaxSize(), color = Color(YouTube.pageBackground(isSystemInDarkTheme()))) {}
             if (chrome) LoadProgress(nav, Modifier.align(Alignment.TopCenter))
             nav.error?.let { LoadErrorState(it, onRetry = host::retry) }
         }

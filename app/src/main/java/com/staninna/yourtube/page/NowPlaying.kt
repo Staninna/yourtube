@@ -22,6 +22,12 @@ data class NowPlaying(
 
     val playing: Boolean get() = status == Status.PLAYING
 
+    /**
+     * Playing, or paused or ended somewhere past the start: a reload would play it again from its
+     * resume point, so a theme change leaves the page alone.
+     */
+    val started: Boolean get() = playing || position > 0.0
+
     val thumbnail: String get() = YouTube.thumbnail(videoId)
 
     /** Position over duration, 0 to 1; null until the player reports a duration. */

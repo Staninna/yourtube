@@ -68,6 +68,19 @@ class ShellModelTest {
         assertEquals("ended, whatever paused says", NowPlaying.Status.ENDED, status(PlaybackKind.ENDED, false))
     }
 
+    @Test fun aVideoHasStartedOncePlayingOrPastItsStart() {
+        val started = { kind: PlaybackKind, paused: Boolean, position: Double ->
+            NowPlaying.of(PageIdentity.Video("VID", meta), emptyList(), PlaybackEvent(kind, "VID", position, 120.0, paused))!!.started
+        }
+        assertTrue(started(PlaybackKind.PLAY, false, 0.0))
+        assertTrue("paused with progress, as after picture-in-picture", started(PlaybackKind.PAUSE, true, 42.0))
+        assertTrue("ended", started(PlaybackKind.ENDED, true, 120.0))
+        assertFalse("paused at the start", started(PlaybackKind.PAUSE, true, 0.0))
+        val history = listOf(HistoryEntry("VID", meta, position = 30.0, duration = 120.0, watchedAt = 1))
+        assertTrue("before its first event, where history left it", NowPlaying.of(PageIdentity.Video("VID", meta), history, null)!!.started)
+        assertFalse(NowPlaying.of(PageIdentity.Video("NEW", null), history, null)!!.started)
+    }
+
     // --- watch progress ---
 
     private fun entry(position: Double, duration: Double) = HistoryEntry("v", position = position, duration = duration, watchedAt = 0)

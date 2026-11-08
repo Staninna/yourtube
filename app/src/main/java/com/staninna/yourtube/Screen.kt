@@ -38,6 +38,9 @@ enum class Screen {
     }
 }
 
+/** What covers the whole shell, navigation bar included. Each handles its own Back. */
+enum class Overlay { NONE, SEARCH, SETTINGS }
+
 /** What Back does in the app; see [Screen.back]. */
 enum class BackStep {
     /** The page's previous history entry. */

@@ -43,6 +43,11 @@ data class NavState(
     /** Load progress, 0 to 100. */
     val progress: Int = 100,
     val error: LoadError? = null,
+    /**
+     * The WebView still draws the page from before a [WebViewHost.load]: Watch covers it until the new
+     * page's first frame, so a card tapped on the home never flashes the page that lay under it.
+     */
+    val stale: Boolean = false,
 )
 
 /**
@@ -140,6 +145,9 @@ class WebViewHost(
      * reports no history, so Back during the load never walks the old one.
      */
     private var dropHistoryOnCommit = false
+
+    /** The URL of the document that just dropped the history before it; a main-frame error for it asks again. */
+    private var freshStart: String? = null
     private var appliedConfig: String = PageConfig.of(settings.value).toString()
 
     /** The theme the current identity's `PREF` cookie carries: seeded, then kept in step by [syncTheme]. */
@@ -160,7 +168,7 @@ class WebViewHost(
         view.keepPlaying = keepPlaying
         webView = view
         // The theme may have changed while this identity was being prepared.
-        syncTheme(view, playing = false)
+        syncTheme(view, videoStarted = false)
         pendingUrl?.let {
             pendingUrl = null
             view.loadUrl(it)
@@ -180,13 +188,14 @@ class WebViewHost(
     /**
      * Loads [url], or the watch page in its place when it is a Short and Shorts are removed. With
      * [freshHistory] the page becomes the first entry of the history once it commits, so Back from it
-     * has nothing to go back to.
+     * has nothing to go back to. The page shown until then is [NavState.stale].
      */
     fun load(url: String, freshHistory: Boolean = false) {
         val target = rewritten(url)
         requestedUrl = target
         dropHistoryOnCommit = freshHistory
-        _nav.update { it.copy(error = null, canGoBack = it.canGoBack && !freshHistory) }
+        freshStart = null
+        _nav.update { it.copy(error = null, canGoBack = it.canGoBack && !freshHistory, stale = true) }
         webView?.loadUrl(target) ?: run { pendingUrl = target }
     }
 
@@ -221,29 +230,29 @@ class WebViewHost(
         return Rect(at[0], at[1], at[0] + view.width, at[1] + view.height)
     }
 
-    /** Loads the failed URL again after a main-frame error. */
+    /** Loads the failed URL again after a main-frame error, with the fresh history the failed load asked for. */
     fun retry() {
         val failed = nav.value.error?.url ?: return
-        load(failed)
+        load(failed, freshHistory = dropHistoryOnCommit)
     }
 
     /**
-     * Follows the system theme after a configuration change. A WebView that does not exist yet
-     * catches up in [create].
+     * Follows the system theme after a configuration change. [videoStarted]: the page's video has
+     * started, so the page is not reloaded. A WebView that does not exist yet catches up in [create].
      */
-    fun syncTheme(playing: Boolean) {
-        webView?.let { syncTheme(it, playing) }
+    fun syncTheme(videoStarted: Boolean) {
+        webView?.let { syncTheme(it, videoStarted) }
     }
 
     /**
      * Sets [view]'s background to YouTube's for the current theme, and brings the identity's `PREF`
      * theme flag along when it differs from [syncedDark]; [ThemeSync] decides whether to reload.
      */
-    private fun syncTheme(view: TubeWebView, playing: Boolean) {
+    private fun syncTheme(view: TubeWebView, videoStarted: Boolean) {
         val dark = isDark()
         // YouTube's own background, so a load never flashes another color.
         view.setBackgroundColor(YouTube.pageBackground(dark))
-        val action = ThemeSync.decide(syncedDark, dark, pageLoaded = view.url != null, playing = playing)
+        val action = ThemeSync.decide(syncedDark, dark, pageLoaded = view.url != null, videoStarted = videoStarted)
         if (action == ThemeSync.NONE) return
         syncedDark = dark
         val cookies = view.identity.cookies
@@ -323,7 +332,11 @@ class WebViewHost(
             val url = request.url.toString()
             return when (val decision = NavigationPolicy.decide(url, settings.value.removeShorts)) {
                 Navigation.InApp -> false
-                Navigation.External -> true.also { openExternally(url) }
+                // A load that redirects out of the app never commits here: the page under it stays.
+                Navigation.External -> true.also {
+                    _nav.update { it.copy(stale = false) }
+                    openExternally(url)
+                }
                 is Navigation.Rewrite -> true.also { view.loadUrl(decision.url) }
             }
         }
@@ -348,6 +361,8 @@ class WebViewHost(
         // (pushState) navigation, so the old page's own history updates cannot take the fresh start.
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
             if (view !== webView) return
+            // Only this document's own error asks for the fresh start again, not a later reload's.
+            freshStart = if (dropHistoryOnCommit) url else null
             if (dropHistoryOnCommit) {
                 dropHistoryOnCommit = false
                 view.clearHistory()
@@ -356,16 +371,25 @@ class WebViewHost(
             scripts.onPageStarted(view, settings.value)
         }
 
+        // The first point at which the WebView draws nothing of the previous document.
+        override fun onPageCommitVisible(view: WebView, url: String?) {
+            if (view === webView) _nav.update { it.copy(stale = false) }
+        }
+
         override fun onPageFinished(view: WebView, url: String?) {
             if (view !== webView) return
-            _nav.update { it.copy(canGoBack = canGoBack(view)) }
+            // stale too: a backstop for a load that finished without a visible commit.
+            _nav.update { it.copy(canGoBack = canGoBack(view), stale = false) }
             scripts.onPageFinished(view, settings.value)
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
             if (view !== webView || !request.isForMainFrame) return
             val failed = LoadError(request.url.toString(), error.description.toString(), LoadError.isOffline(error.errorCode))
-            _nav.update { it.copy(error = failed) }
+            // A failed load starts before its error page commits, so its fresh start kept the page
+            // before it. Asked again: Back from the error skips that page, and Retry starts fresh.
+            if (failed.url == freshStart) dropHistoryOnCommit = true
+            _nav.update { it.copy(error = failed, stale = false) }
         }
 
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {

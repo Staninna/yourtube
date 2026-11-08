@@ -197,14 +197,39 @@ class HomeFlowsTest {
         compose.runOnUiThread { vm.open(PAGE_THREE) }
         compose.runOnUiThread {
             assertFalse("no history while the fresh page loads, so Back cannot walk the old one", host.nav.value.canGoBack)
+            assertTrue("the page that lay under the home stays covered until the new one draws", host.nav.value.stale)
         }
         compose.waitUntil(10_000) { host.nav.value.url == PAGE_THREE && host.nav.value.progress == 100 }
+        compose.waitUntil(10_000) { !host.nav.value.stale }
         assertFalse("a page opened over the home starts a new history", host.nav.value.canGoBack)
         back()
         compose.onNodeWithText("Welcome to YourTube").assertIsDisplayed()
     }
 
+    /** A fresh page that fails to load keeps its fresh start: Back from the error, or after Retry, comes home. */
+    @Test fun aFailedPageOverTheHomeStillStartsAFreshHistory() {
+        setContent(loadPages = true)
+        listOf(PAGE_ONE, PAGE_TWO).forEach { page ->
+            compose.runOnUiThread { vm.open(page) }
+            compose.waitUntil(10_000) { host.nav.value.url == page && host.nav.value.progress == 100 }
+        }
+        compose.onNodeWithContentDescription("Home").performClick()
+        compose.runOnUiThread { vm.open(REFUSED) }
+        compose.waitUntil(10_000) { host.nav.value.error != null }
+        compose.onNodeWithText("Retry").assertIsDisplayed()
+        compose.waitUntil(10_000) { host.nav.value.progress == 100 }
+        assertFalse("the pages before the failed one are gone", host.nav.value.canGoBack)
+
+        compose.onNodeWithText("Retry").performClick()
+        compose.waitUntil(10_000) { host.nav.value.error != null && host.nav.value.progress == 100 }
+        assertFalse("Retry adds no entry to go back to", host.nav.value.canGoBack)
+        back()
+        compose.onNodeWithText("Welcome to YourTube").assertIsDisplayed()
+    }
+
     private companion object {
+        /** Nothing listens on port 1, so the load fails at once, offline or not. */
+        const val REFUSED = "http://127.0.0.1:1/"
         const val WATCHED = "dQw4w9WgXcQ"
         const val SAVED = "rL0qEmTRI-I"
         const val UPLOAD = "jNQXAC9IVRw"

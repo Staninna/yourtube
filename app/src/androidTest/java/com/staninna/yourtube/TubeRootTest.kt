@@ -219,6 +219,44 @@ class TubeRootTest {
         compose.runOnUiThread { assertEquals(listOf(PlayerCommand.Pause, PlayerCommand.Play), sent) }
     }
 
+    /** A link from another app closes search or Settings, so its page shows instead of staying covered. */
+    @Test fun aLinkClosesSearchAndSettings() {
+        setContent()
+        compose.onNodeWithContentDescription("Search YouTube").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("lofi")
+        compose.runOnUiThread { vm.open("https://m.youtube.com/watch?v=dQw4w9WgXcQ", fromLink = true) }
+        compose.waitForIdle()
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
+        compose.onNodeWithContentDescription("Home").assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Ad blocking").assertIsDisplayed()
+        compose.runOnUiThread { vm.open("https://m.youtube.com/watch?v=jNQXAC9IVRw", fromLink = true) }
+        compose.waitForIdle()
+        compose.onAllNodesWithText("Ad blocking").assertCountEquals(0)
+        compose.onNodeWithContentDescription("Home").assertIsDisplayed()
+    }
+
+    /** Clear all while a video plays: the video plays on, and History stays empty. */
+    @Test fun clearedHistoryStaysEmptyWhileTheVideoPlaysOn() {
+        setContent()
+        val id = "dQw4w9WgXcQ"
+        fun play(at: Double) = compose.runOnUiThread { vm.onPlayback(PlaybackEvent(PlaybackKind.TIME, id, at, 212.0, paused = false)) }
+        compose.runOnUiThread { vm.onNavigated("https://m.youtube.com/watch?v=$id") }
+        play(10.0)
+        tab("History").performClick()
+        compose.onNodeWithContentDescription("Clear history").performClick()
+        compose.onNodeWithText("Clear").performClick()
+        compose.onNodeWithText("No history yet").assertIsDisplayed()
+        play(20.0)
+        play(30.0)
+        compose.waitForIdle()
+        compose.onNodeWithText("No history yet").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Pause").assertIsDisplayed()
+        compose.runOnUiThread { assertEquals(emptyList<String>(), store.history.value.map { it.videoId }) }
+    }
+
     @Test fun watchTopBarOffersSearchHomeAndOverflow() {
         setContent()
         compose.runOnUiThread { vm.open("https://m.youtube.com/watch?v=dQw4w9WgXcQ") } // nothing loads: no one collects opens

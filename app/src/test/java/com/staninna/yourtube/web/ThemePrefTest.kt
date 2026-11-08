@@ -33,15 +33,16 @@ class ThemePrefTest {
     }
 
     @Test fun anUnchangedThemeNeedsNothing() {
-        assertEquals(ThemeSync.NONE, ThemeSync.decide(syncedDark = true, dark = true, pageLoaded = true, playing = false))
-        assertEquals(ThemeSync.NONE, ThemeSync.decide(syncedDark = false, dark = false, pageLoaded = false, playing = true))
+        assertEquals(ThemeSync.NONE, ThemeSync.decide(syncedDark = true, dark = true, pageLoaded = true, videoStarted = false))
+        assertEquals(ThemeSync.NONE, ThemeSync.decide(syncedDark = false, dark = false, pageLoaded = false, videoStarted = true))
     }
 
     @Test fun aLoadedIdlePageReloads() =
-        assertEquals(ThemeSync.REWRITE_AND_RELOAD, ThemeSync.decide(syncedDark = false, dark = true, pageLoaded = true, playing = false))
+        assertEquals(ThemeSync.REWRITE_AND_RELOAD, ThemeSync.decide(syncedDark = false, dark = true, pageLoaded = true, videoStarted = false))
 
-    @Test fun aPlayingVideoOrAnUnloadedPageOnlyGetsTheCookie() {
-        assertEquals(ThemeSync.REWRITE, ThemeSync.decide(syncedDark = false, dark = true, pageLoaded = true, playing = true))
-        assertEquals(ThemeSync.REWRITE, ThemeSync.decide(syncedDark = true, dark = false, pageLoaded = false, playing = false))
+    /** A started video, playing or paused, is never reloaded: the reload would play it again. */
+    @Test fun aStartedVideoOrAnUnloadedPageOnlyGetsTheCookie() {
+        assertEquals(ThemeSync.REWRITE, ThemeSync.decide(syncedDark = false, dark = true, pageLoaded = true, videoStarted = true))
+        assertEquals(ThemeSync.REWRITE, ThemeSync.decide(syncedDark = true, dark = false, pageLoaded = false, videoStarted = false))
     }
 }

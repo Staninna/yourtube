@@ -46,9 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -63,6 +61,7 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.staninna.yourtube.BackStep
 import com.staninna.yourtube.MainViewModel
+import com.staninna.yourtube.Overlay
 import com.staninna.yourtube.Screen
 import com.staninna.yourtube.Tab
 import com.staninna.yourtube.UiEvent
@@ -85,9 +84,11 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
     val nav by host.nav.collectAsStateWithLifecycle()
     val page by vm.page.collectAsStateWithLifecycle()
     val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
-    var settingsOpen by rememberSaveable { mutableStateOf(false) }
-    var searchOpen by rememberSaveable { mutableStateOf(false) }
-    val overlayOpen = settingsOpen || searchOpen
+    // Opening a page closes either, so a link that arrives over them shows its page.
+    val overlay by vm.overlay.collectAsStateWithLifecycle()
+    val settingsOpen = overlay == Overlay.SETTINGS
+    val searchOpen = overlay == Overlay.SEARCH
+    val overlayOpen = overlay != Overlay.NONE
     val inPip by vm.pip.inPip.collectAsStateWithLifecycle()
     val watchShown = screen == Screen.PAGE && !overlayOpen
     LaunchedEffect(watchShown) { vm.pip.setWatchShown(watchShown) }
@@ -149,13 +150,11 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
     )
 
     val focus = LocalFocusManager.current
-    val openSearch = { searchOpen = true }
-    // Drops the field's focus too, so it does not land on (and highlight) a top bar button.
-    val closeSearch = {
-        focus.clearFocus(force = true)
-        searchOpen = false
-    }
-    val openSettings = { settingsOpen = true }
+    val openSearch = vm::openSearch
+    val openSettings = vm::openSettings
+    // Drops the search field's focus, so it does not land on (and highlight) a top bar button. Also when
+    // a search or a link closes it.
+    LaunchedEffect(searchOpen) { if (!searchOpen) focus.clearFocus(force = true) }
     Box(Modifier.fillMaxSize()) {
         Scaffold(
             modifier = if (overlayOpen) Modifier.clearAndSetSemantics {} else Modifier,
@@ -185,15 +184,15 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
             enter = slideInHorizontally(MaterialTheme.motionScheme.defaultSpatialSpec()) { it / 3 } + fadeIn(),
             exit = slideOutHorizontally(MaterialTheme.motionScheme.fastSpatialSpec()) { it / 3 } + fadeOut(),
         ) {
-            SettingsScreen(vm, snackbars, backup, onBack = { settingsOpen = false })
+            SettingsScreen(vm, snackbars, backup, onBack = vm::closeOverlay)
         }
         AnimatedVisibility(visible = searchOpen, enter = fadeIn(), exit = fadeOut()) {
             SearchOverlay(
                 // From the home or a native tab, not the query of a page nobody sees.
                 initialQuery = YouTube.searchQuery(nav.url).takeIf { screen == Screen.PAGE },
                 open = searchOpen,
-                onSearch = { if (vm.search(it)) closeSearch() },
-                onDismiss = closeSearch,
+                onSearch = { vm.search(it) },
+                onDismiss = vm::closeOverlay,
             )
         }
         // Settings and search are closed whenever picture-in-picture starts, as Watch shows then; the

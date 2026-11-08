@@ -11,6 +11,7 @@ import com.staninna.yourtube.feed.ChannelFetch
 import com.staninna.yourtube.feed.FeedFetcher
 import com.staninna.yourtube.feed.FeedSource
 import com.staninna.yourtube.page.ChannelResolver
+import com.staninna.yourtube.page.NowPlaying
 import com.staninna.yourtube.playback.PlaybackHub
 import com.staninna.yourtube.sponsor.SegmentSource
 import com.staninna.yourtube.web.PageReport
@@ -231,6 +232,108 @@ class MainViewModelTest {
         assertTrue("nothing to clear, nothing to undo", events.tryReceive().isFailure)
     }
 
+    @Test fun openingAPageClosesSearchAndSettings() = runTest {
+        val (vm, _) = viewModel()
+        vm.openSearch()
+        assertEquals(Overlay.SEARCH, vm.overlay.value)
+        vm.open("https://m.youtube.com/watch?v=$video", fromLink = true)
+        assertEquals("a link over search shows its page", Overlay.NONE, vm.overlay.value)
+        assertEquals(Screen.PAGE, vm.screen.value)
+
+        vm.selectTab(Tab.LIBRARY)
+        vm.openSettings()
+        vm.open("https://m.youtube.com/watch?v=jNQXAC9IVRw", fromLink = true)
+        assertEquals(Overlay.NONE, vm.overlay.value)
+        assertEquals(Tab.WATCH, vm.tab.value)
+
+        vm.openSettings()
+        vm.closeOverlay()
+        assertEquals(Overlay.NONE, vm.overlay.value)
+        vm.openSearch()
+        assertFalse("a blank search keeps the field open", vm.search(" "))
+        assertEquals(Overlay.SEARCH, vm.overlay.value)
+        vm.search("lofi")
+        assertEquals(Overlay.NONE, vm.overlay.value)
+    }
+
+    @Test fun clearedHistoryStaysClearWhileItsVideoPlaysOn() = runTest {
+        val (vm, _) = viewModel()
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        vm.report(PlaybackKind.TIME, paused = false)
+        store.recordPlayback(PlaybackKind.TIME, "OLD", 60.0, 300.0, null)
+        vm.clearHistory()
+        vm.report(PlaybackKind.TIME, paused = false)
+        vm.report(PlaybackKind.PAUSE, paused = true)
+        assertTrue("the video on screen does not come straight back", store.history.value.isEmpty())
+        assertEquals("the bar still follows it", NowPlaying.Status.PAUSED, vm.nowPlaying.value?.status)
+
+        // The next video is recorded as usual, and so is this one once it shows again.
+        vm.onNavigated("https://m.youtube.com/watch?v=jNQXAC9IVRw")
+        vm.onPlayback(PlaybackEvent(PlaybackKind.TIME, "jNQXAC9IVRw", 5.0, 19.0))
+        assertEquals(listOf("jNQXAC9IVRw"), store.history.value.map { it.videoId })
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        vm.report(PlaybackKind.TIME, paused = false)
+        assertEquals(listOf(video, "jNQXAC9IVRw"), store.history.value.map { it.videoId })
+    }
+
+    @Test fun openingTheClearedVideoAgainRecordsIt() = runTest {
+        val (vm, _) = viewModel()
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        vm.report(PlaybackKind.TIME, paused = false)
+        vm.clearHistory()
+        vm.open("https://m.youtube.com/watch?v=$video")
+        vm.report(PlaybackKind.TIME, paused = false)
+        assertEquals(listOf(video), store.history.value.map { it.videoId })
+    }
+
+    @Test fun undoingAClearRecordsTheVideoAgain() = runTest {
+        val (vm, _) = viewModel()
+        val events = events(vm)
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        vm.report(PlaybackKind.TIME, paused = false)
+        vm.clearHistory()
+        vm.undo(events.tryReceive().getOrThrow() as UiEvent.Undoable)
+        vm.onPlayback(PlaybackEvent(PlaybackKind.TIME, video, 50.0, 212.0))
+        assertEquals(50.0, store.history.value.single().position, 0.0)
+    }
+
+    @Test fun undoingAnotherRemovalKeepsThePlayingVideoOut() = runTest {
+        val (vm, _) = viewModel()
+        val events = events(vm)
+        store.recordPlayback(PlaybackKind.TIME, "OTHER", 60.0, 300.0, null)
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        vm.report(PlaybackKind.TIME, paused = false)
+        vm.removeHistory(video)
+        events.tryReceive()
+        vm.removeHistory("OTHER")
+        vm.undo(events.tryReceive().getOrThrow() as UiEvent.Undoable)
+        vm.report(PlaybackKind.TIME, paused = false)
+        assertEquals(listOf("OTHER"), store.history.value.map { it.videoId })
+    }
+
+    @Test fun aPausedVideoIsNotHeldAndComesBackOnceItPlays() = runTest {
+        val (vm, _) = viewModel()
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        vm.report(PlaybackKind.PAUSE, paused = true)
+        vm.clearHistory()
+        assertTrue(store.history.value.isEmpty())
+        vm.report(PlaybackKind.TIME, paused = false)
+        assertEquals("pressing play is watching it again", listOf(video), store.history.value.map { it.videoId })
+    }
+
+    @Test fun swipingAwayTheVideoOnScreenKeepsItOutButNotOthers() = runTest {
+        val (vm, _) = viewModel()
+        store.recordPlayback(PlaybackKind.TIME, "OTHER", 60.0, 300.0, null)
+        vm.onNavigated("https://m.youtube.com/watch?v=$video")
+        vm.report(PlaybackKind.TIME, paused = false)
+        vm.removeHistory("OTHER")
+        vm.report(PlaybackKind.TIME, paused = false)
+        assertEquals(listOf(video), store.history.value.map { it.videoId })
+        vm.removeHistory(video)
+        vm.report(PlaybackKind.TIME, paused = false)
+        assertTrue(store.history.value.isEmpty())
+    }
+
     @Test fun leavingAVideoPageStopsCountingAsPlaying() = runTest {
         val (vm, _) = viewModel()
         vm.onNavigated("https://m.youtube.com/watch?v=dQw4w9WgXcQ")
@@ -263,6 +366,16 @@ class MainViewModelTest {
         val events = Channel<UiEvent>(Channel.UNLIMITED)
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.events.collect { events.send(it) } }
         return events
+    }
+
+    @Test fun aLinkClosesTheTagSheetOfThePageBefore() = runTest {
+        val (vm, _) = viewModel()
+        vm.showVideo()
+        vm.library.onStarClick()
+        assertEquals(video, vm.library.tagSheet.value?.item?.id)
+        vm.open("https://m.youtube.com/watch?v=jNQXAC9IVRw", fromLink = true)
+        assertNull(vm.library.tagSheet.value)
+        assertTrue("the star stays", vm.library.starred.value)
     }
 
     @Test fun theWatchStarGoesThroughTheLibraryAndItsUndoThroughTheViewModel() = runTest {

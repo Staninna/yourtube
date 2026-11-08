@@ -3,6 +3,7 @@ package com.staninna.yourtube
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.staninna.yourtube.data.AdLayer
+import com.staninna.yourtube.data.HistoryEntry
 import com.staninna.yourtube.data.ItemType
 import com.staninna.yourtube.data.Library
 import com.staninna.yourtube.data.PlayerPrefs
@@ -65,11 +66,11 @@ class MainViewModel(
     val corruptNotice: StateFlow<Set<String>?> = store.corruptNotice
 
     /**
-     * The tab, whether Watch shows its home over the page, and whether the page came as a link from
-     * another app ([fromLink]: Back at its first entry returns there): one value, so no reader sees half
-     * a switch.
+     * The tab, whether Watch shows its home over the page, whether the page came as a link from another
+     * app ([fromLink]: Back at its first entry returns there), and the overlay over all of it: one
+     * value, so no reader sees half a switch. Anything that opens a page closes the overlay with it.
      */
-    private data class Shell(val tab: Tab, val home: Boolean, val fromLink: Boolean = false) {
+    private data class Shell(val tab: Tab, val home: Boolean, val fromLink: Boolean = false, val overlay: Overlay = Overlay.NONE) {
         val screen: Screen get() = Screen.of(tab, home)
     }
 
@@ -92,6 +93,9 @@ class MainViewModel(
 
     /** Watch's page came as a link from another app and nothing else was opened since; see [Screen.back]. */
     val fromLink: StateFlow<Boolean> = shell.map { it.fromLink }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Settings or search over the whole shell, or neither. */
+    val overlay: StateFlow<Overlay> = shell.map { it.overlay }.stateIn(viewModelScope, SharingStarted.Eagerly, Overlay.NONE)
 
     private val currentUrl = MutableStateFlow<String?>(null)
     private val lastReport = MutableStateFlow<PageReport?>(null)
@@ -171,6 +175,9 @@ class MainViewModel(
      */
     private var viewerMuted = false
 
+    /** The playing video the viewer took out of history, kept out while it plays on. */
+    private val historyHold = HistoryHold()
+
     /** Whether Watch shows a bot check, which only a new identity may get past. */
     val botCheck: StateFlow<Boolean> = combine(currentUrl, lastReport) { url, report ->
         Interstitials.of(url) == Interstitial.BOT_CHECK ||
@@ -202,13 +209,22 @@ class MainViewModel(
     fun selectTab(t: Tab) = shell.update { it.copy(tab = t, fromLink = it.fromLink && t == it.tab) }
 
     /**
-     * Loads [url] in Watch and shows it. Over the home it starts a new page history, see [OpenRequest].
-     * A link from another app ([fromLink]) always does, so one Back at its first page returns to that app.
+     * Loads [url] in Watch and shows it, closing Settings, search and the tag sheet (which belongs to the
+     * page before). Over the home it starts a new page history, see [OpenRequest]. A link from another
+     * app ([fromLink]) always does, so one Back at its first page returns to that app.
      */
     fun open(url: String, fromLink: Boolean = false) {
         val overHome = shell.getAndUpdate { Shell(Tab.WATCH, home = false, fromLink = fromLink) }.home
+        library.closeTagSheet()
+        historyHold.onOpen((PageIdentity.fromUrl(url) as? PageIdentity.Video)?.videoId)
         opens.trySend(OpenRequest(url, freshHistory = overHome || fromLink))
     }
+
+    fun openSearch() = shell.update { it.copy(overlay = Overlay.SEARCH) }
+
+    fun openSettings() = shell.update { it.copy(overlay = Overlay.SETTINGS) }
+
+    fun closeOverlay() = shell.update { it.copy(overlay = Overlay.NONE) }
 
     /** Watch's home, over the page: from Watch's Home button, and Back at the page's first entry. */
     fun showHome() = shell.update { Shell(Tab.WATCH, home = true) }
@@ -249,6 +265,7 @@ class MainViewModel(
         if (lastPlayback.value?.videoId != videoId) lastPlayback.value = null
         // The carry is for the video the new identity reloads, and no other.
         if (carry?.videoId != videoId) carry = null
+        historyHold.onPage(videoId)
     }
 
     override fun onPageReport(report: PageReport) {
@@ -260,6 +277,7 @@ class MainViewModel(
 
     override fun onPlayback(event: PlaybackEvent) {
         lastPlayback.value = event
+        if (!historyHold.records(event.videoId)) return
         val meta = (page.value as? PageIdentity.Video)?.meta?.takeIf { it.videoId == event.videoId }
         store.recordPlayback(event.kind, event.videoId, event.position, event.duration, meta)
     }
@@ -291,26 +309,33 @@ class MainViewModel(
 
     // --- history ---
 
-    /** Clears history and resume positions, offering Undo. */
+    /** Clears history and resume positions, offering Undo. A playing video stays out, see [HistoryHold]. */
     fun clearHistory() {
         val cleared = history.value
         if (cleared.isEmpty()) return
+        historyHold.hold(nowPlaying.value?.takeIf { it.playing }?.videoId)
         store.clearHistory()
         _events.trySend(UiEvent.HistoryCleared(cleared))
     }
 
-    /** Removes one video and its resume position, offering Undo. */
+    /** Removes one video and its resume position, offering Undo. A playing video stays out, see [HistoryHold]. */
     fun removeHistory(videoId: String) {
         val entry = history.value.firstOrNull { it.videoId == videoId } ?: return
+        if (nowPlaying.value?.takeIf { it.playing }?.videoId == videoId) historyHold.hold(videoId)
         store.removeHistory(videoId)
         _events.trySend(UiEvent.HistoryRemoved(entry))
     }
 
     fun undo(event: UiEvent.Undoable) = when (event) {
-        is UiEvent.HistoryCleared -> store.restoreHistory(event.entries)
-        is UiEvent.HistoryRemoved -> store.restoreHistory(listOf(event.entry))
+        is UiEvent.HistoryCleared -> restoreHistory(event.entries)
+        is UiEvent.HistoryRemoved -> restoreHistory(listOf(event.entry))
         is UiEvent.Unstarred -> library.undoUnstar(event)
         is UiEvent.SegmentSkipped -> sponsor.undo(event)
+    }
+
+    private fun restoreHistory(entries: List<HistoryEntry>) {
+        historyHold.onRestore(entries)
+        store.restoreHistory(entries)
     }
 
     fun dismissCorruptNotice() = store.dismissCorruptNotice()

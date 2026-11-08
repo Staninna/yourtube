@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
      */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        host.syncTheme(playing = vm.playing.value)
+        host.syncTheme(videoStarted = vm.nowPlaying.value?.started == true)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

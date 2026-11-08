@@ -7,6 +7,10 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
@@ -34,6 +38,7 @@ import com.staninna.yourtube.sponsor.SegmentSource
 import com.staninna.yourtube.ui.TubeRoot
 import com.staninna.yourtube.ui.theme.TubeTheme
 import com.staninna.yourtube.web.WebViewHost
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -104,6 +109,32 @@ class TagFlowsTest {
         compose.waitUntil(5_000) { store.settings.value.librarySort == LibrarySort.NAME }
         compose.onNodeWithContentDescription("Sort: Name A to Z").assertIsDisplayed()
         assertEquals(listOf("apple", "Banana", "Cherry"), shownTitles())
+    }
+
+    /**
+     * The Sort chip says its order in a word, so the Tags button keeps the room for a long tag name;
+     * TalkBack still hears the full order, and both stay 48 dp tall.
+     */
+    @Test fun theSortChipStaysShortBesideALongTagName() {
+        starThree()
+        val science = store.createTag("Science & Education", attachTo = setOf("aaaaaaaaaaa"))!!
+        openVideos()
+        compose.runOnUiThread { vm.library.toggleTagFilter(science.id) }
+        val sort = compose.onNodeWithContentDescription("Sort: Recently added")
+        sort.assertHeightIsAtLeast(48.dp)
+        assertNarrow(sort)
+        compose.onNodeWithContentDescription("Tags: Science & Education").assertHeightIsAtLeast(48.dp)
+        compose.onNodeWithContentDescription("Clear tag filter").assertIsDisplayed()
+        // The menu names each order in full.
+        sort.performClick()
+        compose.onNodeWithText("Recently added").assertIsDisplayed()
+        compose.onNodeWithText("Name A to Z").performClick()
+        assertNarrow(compose.onNodeWithContentDescription("Sort: Name A to Z"))
+    }
+
+    private fun assertNarrow(chip: SemanticsNodeInteraction, most: Dp = 120.dp) {
+        val width = chip.getUnclippedBoundsInRoot().let { it.right - it.left }
+        assertTrue("the Sort chip is $width wide", width <= most)
     }
 
     @Test fun theFilterSheetCountsTagsAndAppliesAnyAllAndUntaggedLive() {

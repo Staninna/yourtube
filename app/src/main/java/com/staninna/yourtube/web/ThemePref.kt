@@ -34,7 +34,10 @@ enum class ThemeSync {
     /** `PREF` already carries this theme. */
     NONE,
 
-    /** Rewrite `PREF`; the next page load shows it. For a page not loaded yet, or a playing video. */
+    /**
+     * Rewrite `PREF`; the next page load shows it. For a page not loaded yet, or a video that has
+     * started, playing or paused (see `NowPlaying.started`): a reload would play it again.
+     */
     REWRITE,
 
     /** Rewrite `PREF` and reload, since YouTube themes the page on the server. */
@@ -42,9 +45,9 @@ enum class ThemeSync {
     ;
 
     companion object {
-        fun decide(syncedDark: Boolean, dark: Boolean, pageLoaded: Boolean, playing: Boolean): ThemeSync = when {
+        fun decide(syncedDark: Boolean, dark: Boolean, pageLoaded: Boolean, videoStarted: Boolean): ThemeSync = when {
             syncedDark == dark -> NONE
-            !pageLoaded || playing -> REWRITE
+            !pageLoaded || videoStarted -> REWRITE
             else -> REWRITE_AND_RELOAD
         }
     }

@@ -187,16 +187,28 @@ private fun TagFilterSheet(choices: TagChoices, filtering: TagFiltering, noun: N
     }
 }
 
-/** Library's order as a chip with a small menu of [options]: Recently added, Name A to Z, and in Subs Latest upload. */
+/**
+ * Library's order as a chip with a small menu of [options]: Recently added, Name A to Z, and in Subs
+ * Latest upload. The chip says it short ("Recent"), so the Tags button beside it keeps the room; the
+ * menu and TalkBack use the full name.
+ */
 @Composable
 fun SortButton(sort: LibrarySort, options: List<LibrarySort>, onSort: (LibrarySort) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
+        val description = "Sort: ${sortLabel(sort)}"
         AssistChip(
             onClick = { open = true },
-            label = { Text(sortLabel(sort)) },
+            label = { Text(sortShortLabel(sort), maxLines = 1) },
             leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) },
-            modifier = Modifier.semantics { contentDescription = "Sort: ${sortLabel(sort)}" },
+            modifier = Modifier.clearAndSetSemantics {
+                contentDescription = description
+                role = Role.Button
+                onClick(label = "Change sort") {
+                    open = true
+                    true
+                }
+            },
         )
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, shape = MaterialTheme.shapes.large) {
             options.forEach { option ->
@@ -222,4 +234,11 @@ fun sortLabel(sort: LibrarySort): String = when (sort) {
     LibrarySort.RECENT -> "Recently added"
     LibrarySort.NAME -> "Name A to Z"
     LibrarySort.LATEST_UPLOAD -> "Latest upload"
+}
+
+/** [sortLabel] in a word or two, for the chip. */
+fun sortShortLabel(sort: LibrarySort): String = when (sort) {
+    LibrarySort.RECENT -> "Recent"
+    LibrarySort.NAME -> "A to Z"
+    LibrarySort.LATEST_UPLOAD -> "Latest"
 }
