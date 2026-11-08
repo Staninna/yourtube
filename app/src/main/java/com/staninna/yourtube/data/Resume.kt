@@ -21,3 +21,21 @@ object ResumeRules {
         return (entry.position - REWIND).coerceAtLeast(0.0)
     }
 }
+
+/** How far a video in history was watched, for the bar under its thumbnail. */
+data class WatchProgress(
+    /** Position over duration, 0 to 1. */
+    val fraction: Float,
+    /** Within [ResumeRules.END_MARGIN] of the end: the video resumes from the start, so it counts as watched. */
+    val finished: Boolean,
+) {
+    companion object {
+        /** [entry]'s progress, or null when there is none to show (no duration yet, or barely started). */
+        fun of(entry: HistoryEntry): WatchProgress? {
+            val fraction = entry.fraction ?: return null
+            val finished = entry.position > entry.duration - ResumeRules.END_MARGIN
+            if (!finished && entry.position < ResumeRules.MIN_POSITION) return null
+            return WatchProgress(fraction, finished)
+        }
+    }
+}

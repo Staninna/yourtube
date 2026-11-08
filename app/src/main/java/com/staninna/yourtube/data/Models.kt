@@ -58,6 +58,9 @@ data class HistoryEntry(
 ) {
     val url: String get() = YouTube.watchUrl(videoId)
     val thumbnail: String get() = YouTube.thumbnail(videoId)
+
+    /** Position over duration, 0 to 1; null until the player has reported a duration. */
+    val fraction: Float? get() = if (duration > 0.0) (position / duration).toFloat().coerceIn(0f, 1f) else null
 }
 
 /** A channel's canonical id, display name and avatar, as read from its own page. */

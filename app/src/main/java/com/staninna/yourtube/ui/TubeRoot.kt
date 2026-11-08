@@ -1,117 +1,191 @@
 package com.staninna.yourtube.ui
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.RssFeed
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Subscriptions
+import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.Subscriptions
 import androidx.compose.material.icons.outlined.VideoLibrary
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ShortNavigationBar
+import androidx.compose.material3.ShortNavigationBarItem
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.staninna.yourtube.MainViewModel
 import com.staninna.yourtube.Tab
+import com.staninna.yourtube.UiEvent
 import com.staninna.yourtube.YouTube
+import com.staninna.yourtube.page.NowPlaying
+import com.staninna.yourtube.ui.components.NowPlayingBar
 import com.staninna.yourtube.web.WebViewHost
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The app shell. Watch (the WebView) is always composed at the bottom so playback never stops; the
+ * native tabs lie over it with the now-playing bar, the navigation bar runs along the bottom, and
+ * Settings and search cover everything when open.
+ */
 @Composable
 fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
     val tab by vm.tab.collectAsStateWithLifecycle()
     val nav by host.nav.collectAsStateWithLifecycle()
-    val starTarget by vm.starTarget.collectAsStateWithLifecycle()
-    val library by vm.library.collectAsStateWithLifecycle()
+    val page by vm.page.collectAsStateWithLifecycle()
+    val nowPlaying by vm.nowPlaying.collectAsStateWithLifecycle()
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    val overlayOpen = settingsOpen || searchOpen
+    val snackbar = remember { SnackbarHostState() }
 
-    val target = starTarget
-    val starred = target != null && library.items.any { it.id == target.id }
-
-    BackHandler(enabled = tab != Tab.WATCH || nav.canGoBack) {
-        when {
-            tab != Tab.WATCH -> vm.selectTab(Tab.WATCH)
-            nav.canGoBack -> host.goBack()
+    LaunchedEffect(vm) {
+        vm.events.collect { event ->
+            when (event) {
+                is UiEvent.HistoryCleared -> {
+                    val result = snackbar.showSnackbar("History cleared", actionLabel = "Undo", duration = SnackbarDuration.Long)
+                    if (result == SnackbarResult.ActionPerformed) vm.undoClearHistory(event)
+                }
+            }
         }
     }
 
-    Scaffold(
-        topBar = {
-            when (tab) {
-                Tab.WATCH -> TopAppBar(
-                    title = {},
-                    navigationIcon = {
-                        if (nav.canGoBack) IconButton(onClick = { host.goBack() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-                        }
-                    },
-                    actions = {
-                        if (target != null) IconButton(onClick = { vm.toggleStarCurrent() }) {
-                            if (starred) Icon(Icons.Filled.Star, "Unstar", tint = MaterialTheme.colorScheme.primary)
-                            else Icon(Icons.Outlined.StarBorder, "Star")
-                        }
-                        IconButton(onClick = { vm.open(YouTube.HOME) }) { Icon(Icons.Filled.Home, "Home") }
-                    },
+    // Native tabs go back to Watch once it has something; Watch goes back through the page's history.
+    BackHandler(enabled = !overlayOpen && if (tab == Tab.WATCH) nav.canGoBack else nav.url != null) {
+        if (tab == Tab.WATCH) host.goBack() else vm.selectTab(Tab.WATCH)
+    }
+
+    val watchBar = watchBarColor(page)
+    val surfaceIsLight = !isSystemInDarkTheme()
+    SystemBarIcons(
+        lightStatusBar = if (tab == Tab.WATCH && !overlayOpen) watchBar.luminance() > 0.5f else surfaceIsLight,
+        lightNavigationBar = surfaceIsLight,
+    )
+
+    val focus = LocalFocusManager.current
+    val openSearch = { searchOpen = true }
+    // Drops the field's focus too, so it does not land on (and highlight) a top bar button.
+    val closeSearch = {
+        focus.clearFocus(force = true)
+        searchOpen = false
+    }
+    val openSettings = { settingsOpen = true }
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = if (overlayOpen) Modifier.clearAndSetSemantics {} else Modifier,
+            bottomBar = { TubeNavigationBar(tab, vm::selectTab) },
+            snackbarHost = { SnackbarHost(snackbar) },
+            contentWindowInsets = WindowInsets(0),
+        ) { padding ->
+            Box(Modifier.fillMaxSize().padding(padding)) {
+                WatchScreen(
+                    vm, host, nav,
+                    covered = tab != Tab.WATCH || overlayOpen,
+                    onSearch = openSearch,
+                    onSettings = openSettings,
+                    modifier = if (tab != Tab.WATCH) Modifier.clearAndSetSemantics {} else Modifier,
                 )
-                Tab.LIBRARY -> TopAppBar(title = { Text("Library") })
-                Tab.HISTORY -> TopAppBar(
-                    title = { Text("History") },
-                    actions = { IconButton(onClick = { vm.clearHistory() }) { Icon(Icons.Filled.DeleteSweep, "Clear") } },
-                )
-                Tab.FEEDS -> TopAppBar(
-                    title = { Text("Feeds") },
-                    actions = { IconButton(onClick = { vm.refreshFeeds() }) { Icon(Icons.Filled.Refresh, "Refresh") } },
-                )
+                NativeTabs(tab, vm, nowPlaying, openSearch, openSettings, overlayOpen)
             }
-        },
-        bottomBar = {
-            NavigationBar {
-                NavItem(tab, Tab.WATCH, Icons.Filled.PlayArrow, "Watch", vm)
-                NavItem(tab, Tab.LIBRARY, Icons.Outlined.VideoLibrary, "Library", vm)
-                NavItem(tab, Tab.HISTORY, Icons.Filled.History, "History", vm)
-                NavItem(tab, Tab.FEEDS, Icons.Filled.RssFeed, "Feeds", vm)
-            }
-        },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            // The WebView stays attached and playing while native tabs cover it.
-            WebViewSlot(host, Modifier.fillMaxSize())
-            if (tab != Tab.WATCH) {
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    when (tab) {
-                        Tab.LIBRARY -> LibraryScreen(vm)
-                        Tab.HISTORY -> HistoryScreen(vm)
-                        Tab.FEEDS -> FeedsScreen(vm)
-                        else -> {}
+        }
+        AnimatedVisibility(
+            visible = settingsOpen,
+            enter = slideInHorizontally(MaterialTheme.motionScheme.defaultSpatialSpec()) { it / 3 } + fadeIn(),
+            exit = slideOutHorizontally(MaterialTheme.motionScheme.fastSpatialSpec()) { it / 3 } + fadeOut(),
+        ) {
+            SettingsScreen(vm, onBack = { settingsOpen = false })
+        }
+        AnimatedVisibility(visible = searchOpen, enter = fadeIn(), exit = fadeOut()) {
+            SearchOverlay(
+                initialQuery = YouTube.searchQuery(nav.url),
+                onSearch = { if (vm.search(it)) closeSearch() },
+                onDismiss = closeSearch,
+            )
+        }
+    }
+}
+
+/** Feeds, Library and History over Watch, with the now-playing bar under them. */
+@Composable
+private fun NativeTabs(
+    tab: Tab,
+    vm: MainViewModel,
+    nowPlaying: NowPlaying?,
+    onSearch: () -> Unit,
+    onSettings: () -> Unit,
+    overlayOpen: Boolean,
+) {
+    val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val spatial = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    AnimatedVisibility(tab != Tab.WATCH, enter = fadeIn(effects), exit = fadeOut(effects)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            // Lists and the bar keep clear of a camera cutout at the side in landscape.
+            Column(Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
+                // Fade through: the new tab fades in while growing slightly, the old one just fades.
+                AnimatedContent(
+                    targetState = tab,
+                    transitionSpec = { (fadeIn(effects) + scaleIn(spatial, initialScale = 0.96f)) togetherWith fadeOut(effects) },
+                    modifier = Modifier.weight(1f),
+                    label = "tab",
+                ) { shown ->
+                    when (shown) {
+                        Tab.FEEDS -> FeedsScreen(vm, onSearch, onSettings)
+                        Tab.LIBRARY -> LibraryScreen(vm, onSearch, onSettings)
+                        Tab.HISTORY -> HistoryScreen(vm, onSearch, onSettings)
+                        // Leaving for Watch: keep the last frame blank while the layer fades.
+                        Tab.WATCH -> Box(Modifier.fillMaxSize())
                     }
+                }
+                AnimatedVisibility(
+                    // Native tabs only: Watch shows the video itself, and Settings and search cover the shell.
+                    visible = nowPlaying != null && tab != Tab.WATCH && !overlayOpen,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut(),
+                ) {
+                    nowPlaying?.let { NowPlayingBar(it, onOpen = { vm.selectTab(Tab.WATCH) }) }
                 }
             }
         }
@@ -119,98 +193,44 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
 }
 
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.NavItem(
-    current: Tab, tab: Tab, icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, vm: MainViewModel,
-) {
-    NavigationBarItem(
-        selected = current == tab,
-        onClick = { vm.selectTab(tab) },
-        icon = { Icon(icon, label) },
-        label = { Text(label) },
-    )
-}
-
-@Composable
-private fun Empty(text: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun LibraryScreen(vm: MainViewModel) {
-    val library by vm.library.collectAsStateWithLifecycle()
-    if (library.items.isEmpty()) { Empty("Star channels and videos to see them here."); return }
-    LazyColumn(Modifier.fillMaxSize()) {
-        items(library.items, key = { it.id }) { item ->
-            MediaRow(
-                title = item.title,
-                subtitle = item.author ?: item.type.name.lowercase(),
-                thumbnail = item.thumbnail,
-                onClick = { vm.open(item.url) },
-                onTrailing = { vm.toggleStar(item) },
-                trailing = Icons.Filled.Star,
+private fun TubeNavigationBar(current: Tab, onSelect: (Tab) -> Unit) {
+    ShortNavigationBar {
+        Tab.entries.forEach { tab ->
+            val destination = destinations.getValue(tab)
+            val selected = tab == current
+            ShortNavigationBarItem(
+                selected = selected,
+                onClick = { onSelect(tab) },
+                // The label names the tab; the icon stays silent so TalkBack does not say it twice.
+                icon = { Icon(if (selected) destination.selected else destination.unselected, contentDescription = null) },
+                label = { Text(destination.label) },
             )
         }
     }
 }
 
+private class Destination(val label: String, val selected: ImageVector, val unselected: ImageVector)
+
+private val destinations = mapOf(
+    Tab.WATCH to Destination("Watch", Icons.Filled.PlayCircle, Icons.Outlined.PlayCircle),
+    Tab.FEEDS to Destination("Feeds", Icons.Filled.Subscriptions, Icons.Outlined.Subscriptions),
+    Tab.LIBRARY to Destination("Library", Icons.Filled.VideoLibrary, Icons.Outlined.VideoLibrary),
+    Tab.HISTORY to Destination("History", Icons.Filled.History, Icons.Outlined.History),
+)
+
+/**
+ * System bar icon tones: dark icons over light content and light ones over dark. The status bar
+ * follows whatever lies under it; the navigation bar follows the theme. Set on every change, since
+ * the Activity absorbs theme changes and is never recreated to pick them up.
+ */
 @Composable
-private fun HistoryScreen(vm: MainViewModel) {
-    val history by vm.history.collectAsStateWithLifecycle()
-    if (history.isEmpty()) { Empty("Videos you watch show up here."); return }
-    LazyColumn(Modifier.fillMaxSize()) {
-        items(history, key = { it.videoId }) { h ->
-            MediaRow(
-                title = h.meta?.title ?: h.url,
-                subtitle = h.meta?.author,
-                thumbnail = h.thumbnail,
-                onClick = { vm.open(h.url) },
-            )
+private fun SystemBarIcons(lightStatusBar: Boolean, lightNavigationBar: Boolean) {
+    val view = LocalView.current
+    SideEffect {
+        val window = (view.context as? Activity)?.window ?: return@SideEffect
+        WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = lightStatusBar
+            isAppearanceLightNavigationBars = lightNavigationBar
         }
     }
-}
-
-@Composable
-private fun FeedsScreen(vm: MainViewModel) {
-    val feeds by vm.feeds.collectAsStateWithLifecycle()
-    val loading by vm.feedsLoading.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { if (feeds.isEmpty()) vm.refreshFeeds() }
-    when {
-        loading && feeds.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        feeds.isEmpty() -> Empty("Star some channels, then pull Refresh to see their newest uploads.")
-        else -> LazyColumn(Modifier.fillMaxSize()) {
-            items(feeds, key = { it.videoId }) { f ->
-                MediaRow(title = f.title, subtitle = f.author, thumbnail = f.thumbnail, onClick = { vm.open(f.url) })
-            }
-        }
-    }
-}
-
-@Composable
-private fun MediaRow(
-    title: String,
-    subtitle: String?,
-    thumbnail: String?,
-    onClick: () -> Unit,
-    onTrailing: (() -> Unit)? = null,
-    trailing: androidx.compose.ui.graphics.vector.ImageVector? = null,
-) {
-    androidx.compose.material3.ListItem(
-        headlineContent = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-        supportingContent = { if (!subtitle.isNullOrBlank()) Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        leadingContent = {
-            coil.compose.AsyncImage(
-                model = thumbnail,
-                contentDescription = null,
-                modifier = Modifier.size(width = 96.dp, height = 56.dp),
-            )
-        },
-        trailingContent = {
-            if (trailing != null && onTrailing != null) IconButton(onClick = onTrailing) {
-                Icon(trailing, "action", tint = MaterialTheme.colorScheme.primary)
-            }
-        },
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-    )
 }

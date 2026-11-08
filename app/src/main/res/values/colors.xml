@@ -1,0 +1,8 @@
+<resources>
+    <!--
+    The launch window's background, before Compose draws. A plain neutral (tone 98), not a theme
+    color: the first frame may use wallpaper colors or the fallback palette depending on a setting
+    the window cannot read, and both surfaces sit within a tone of this gray.
+    -->
+    <color name="window_background">#FFF9F9F9</color>
+</resources>

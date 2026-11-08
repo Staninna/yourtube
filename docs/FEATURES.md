@@ -34,7 +34,16 @@ move it up and flip its status. New ideas go in the backlog.
 | Links leaving YouTube | done | YouTube, its consent page and the `google.com/sorry` captcha stay in the app; every other link opens in the browser or the matching app. |
 | Ad hiding | partial | CSS hides common ad elements only. No network/manifest-level ad blocking (which is what removes mid-roll ad breaks). See backlog. |
 | Background playback | partial | foreground service + Page-Visibility guard keep audio going when backgrounded. No lock-screen / notification transport controls yet (needs MediaSession). |
-| Back navigation | done | in-page back, then exit |
+| Back navigation | done | predictive back throughout: Watch goes back through the page's history, a native tab goes back to Watch once it has something, Settings and search close (Settings shrinks toward the swiped edge as you drag), and at the root the system back-to-home animation plays. |
+| App shell (Material 3 Expressive) | done | Expressive theme and motion, wallpaper colors (Android 12+) or a red fallback palette, light and dark, edge to edge with no launch flash. Bottom navigation (Watch, Feeds, Library, History) with fade-through tab motion. The WebView stays alive under the native tabs. |
+| Watch top bar | done | back (when the page can go back), star, search, YouTube home, and an overflow with Share (system share sheet, `www.youtube.com` link) and Settings. No title; its color follows YouTube's own header (`#0f0f0f` on watch pages and in dark theme, white otherwise), so bar and page read as one surface. |
+| YouTube's own chrome hidden | done | CSS hides YouTube's header, pivot bar, sign-in and Premium nags and app promos, and moves the player and comments panel up into the freed space. YouTube's search UI comes back while its in-page search box is in use. |
+| Native search | done | a search action on every tab opens a full-screen field (prefilled and selected on a results page) and loads `m.youtube.com/results` in Watch. |
+| Load progress and errors | done | a thin progress line under the Watch bar while a page loads; a failed main-frame load shows a native "You're offline" or "This page didn't load" state with Retry instead of Chromium's error page. |
+| Theme sync with YouTube | done | switching the system theme while the app runs rewrites YouTube's `PREF` theme flag (keeping YouTube's other flags) and reloads the page, unless a video is playing; then the next page load picks it up. The WebView background follows the theme. |
+| Now-playing bar | partial | above the navigation bar on native tabs while Watch shows a video: still, title, channel and a progress line that waves while playing; tap returns to Watch. Play/pause arrives with background audio (stage 7). |
+| Settings | partial | from the overflow menu. Content (Hide Shorts), Appearance (dynamic color) and About (app and WebView versions, Diagnostics counts). Playback, Feed, Library and Privacy appear when their settings land. |
+| Accessibility baseline | done | content and state descriptions (star "Starred" / "Not starred", watched progress on thumbnails, switches), 48 dp targets, TalkBack skips whatever lies under an open tab or Settings, layouts hold at font scale 1.3. |
 
 ## Next milestone, the login-free NouTube features the user asked for
 
@@ -43,12 +52,12 @@ These are the priority after v0 compiles and runs. All local, no login.
 | Feature | Status | Plan |
 |---------|--------|------|
 | **Star channels and videos (library)** | partial | star in the Watch top bar. What gets starred comes from the URL plus the player's own data, so it stays right after in-page navigation. `/@handle` channels are resolved to their channel id and avatar in the background (cached 30 days). Tag sheet and Library redesign come in stage 4. |
-| **Watch history** | partial | every played video is recorded (last 2000) with title and channel; plain list to reopen. Day grouping, swipe to remove and progress bars come in stage 4. |
-| **RSS feed reader for channels** | todo | fetch `https://www.youtube.com/feeds/videos.xml?channel_id=...` (anonymous, no login), parse XML natively, show newest uploads from starred channels. This is the de-Googled replacement for a subscriptions feed. |
+| **Watch history** | partial | every played video is recorded (last 2000) with title, channel, length badge and a watched bar; finished videos are dimmed. Clear all has Undo. Day grouping and swipe to remove come in stage 4. |
+| **RSS feed reader for channels** | partial | fetches `https://www.youtube.com/feeds/videos.xml?channel_id=...` (anonymous, no login) for every starred channel and lists the newest uploads with watched bars. YouTube's feed endpoint answers 404 for many requests in a row (seen November 2026), so a refresh can come back empty; per-channel retry, paging and the new-videos pill come in stage 5. |
 | **Tags for the library** | partial | replaces folders. The store has tags (create, attach, delete with cascade); the UI comes in stage 4. |
-| **Hide shorts** | todo | CSS/inject toggle; quick win. |
-| App chrome (top bar, drawer) | todo | minimal Compose navigation to reach library / history / feeds without leaving the player. |
-| Settings + import/export | todo | local JSON export/import so data is portable. |
+| **Hide shorts** | partial | Settings > Content > Hide Shorts hides Shorts shelves and links by CSS. The full "remove all Shorts" (redirects, Feeds filtering) comes in stage 6. |
+| App chrome (top bar, drawer) | done | see the shell rows above. |
+| Settings + import/export | partial | Settings screen exists (see above); JSON export/import comes in stage 4. |
 
 ## Later backlog (from NouTube, not yet scoped)
 

@@ -134,6 +134,15 @@ class Store(
     /** Clears history and every resume position in one write. */
     fun clearHistory() = historyFile.update { emptyList() }
 
+    /**
+     * Puts back [entries] taken before a clear (Undo). Videos watched since keep their newer entries;
+     * the result is newest first and capped like any history.
+     */
+    fun restoreHistory(entries: List<HistoryEntry>) = historyFile.update { current ->
+        val kept = current.map { it.videoId }.toSet()
+        (current + entries.filterNot { it.videoId in kept }).sortedByDescending { it.watchedAt }.take(HISTORY_CAP)
+    }
+
     /** Writes pending playback state now. The returned job completes when every write is done. */
     fun flush(): Job {
         pendingFlush?.cancel()

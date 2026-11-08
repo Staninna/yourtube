@@ -261,6 +261,26 @@ class StoreTest {
         assertTrue(store().history.value.isEmpty())
     }
 
+    @Test fun undoingAClearRestoresPositionsAndKeepsNewerWatches() = runTest {
+        val store = store()
+        store.time("A", 60.0)
+        clock += 10
+        store.time("B", 60.0)
+        val cleared = store.history.value
+        store.clearHistory()
+        clock += 10
+        store.time("B", 120.0) // watched again before Undo: the newer entry wins
+        clock += 10
+        store.time("C", 30.0)
+
+        store.restoreHistory(cleared)
+        runCurrent()
+        assertEquals(listOf("C", "B", "A"), store.history.value.map { it.videoId })
+        assertEquals(115.0, store.resumePosition("B")!!, 0.0)
+        assertEquals(55.0, store.resumePosition("A")!!, 0.0)
+        assertEquals(listOf("C", "B", "A"), store().history.value.map { it.videoId })
+    }
+
     @Test fun resumePositionAppliesTheRules() = runTest {
         val store = store()
         store.time("A", 60.0)

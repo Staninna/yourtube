@@ -1,0 +1,4 @@
+<resources>
+    <!-- Neutral tone 6, the dark counterpart of the light value. -->
+    <color name="window_background">#FF131313</color>
+</resources>

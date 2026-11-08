@@ -1,8 +1,12 @@
 <resources>
-    <!-- A plain dark, edge-to-edge shell; the UI itself is the YouTube WebView. -->
-    <style name="Theme.Tube" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">#000000</item>
-        <item name="android:navigationBarColor">#000000</item>
-        <item name="android:windowBackground">#000000</item>
+    <!--
+    The window behind Compose, edge to edge. Its background is a neutral close to every surface the
+    first frame can have (see colors.xml), so a cold launch shows no flash; values-night has the dark
+    one. System bars stay transparent; Compose sets their icon tones.
+    -->
+    <style name="Theme.Tube" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>

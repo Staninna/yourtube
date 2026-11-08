@@ -62,6 +62,35 @@ internal class PageScripts(assets: AssetManager) {
     companion object {
         private const val CONFIG_PLACEHOLDER = "/*CONFIG*/{}"
 
+        /**
+         * YouTube's header (logo, search, "Open App", account) goes: Watch's native top bar replaces it.
+         * YouTube lays the page out around a 48 px header with literal offsets, so each one that
+         * matters is zeroed: the app's top padding, the sticky player, the comments and description
+         * panel under the player, and the scroll anchor. Shorts and fullscreen keep their own layout.
+         */
+        private val HEADER_CSS = listOf(
+            "ytm-mobile-topbar-renderer,#header-bar,.mobile-topbar-header-background{display:none !important}",
+            // Except while YouTube's own search is open (home's in-page search box): it lives in the header.
+            "#header-bar:has(.mobile-topbar-header[data-mode=\"searching\"]){display:block !important}",
+            "ytm-app,ytm-app.sticky-player{padding-top:0 !important}",
+            ".player-container,.player-container.sticky-player{top:0 !important}",
+            "html.watch-scroll{scroll-padding-top:0 !important}",
+            "html.watch-scroll.sticky-player{scroll-padding-top:56.25vw !important}",
+            "@media (orientation:portrait){ytm-engagement-panel:not(.is-shorts-style):not(.force-fullscreen)" +
+                "{top:56.25vw !important}}",
+            "@media (orientation:landscape) and (min-width:931px){ytm-engagement-panel:not(.is-shorts-style)" +
+                "{top:0 !important}}",
+            ".mweb-phone-metadata-split-view ytm-engagement-panel:not(.is-shorts-style){top:0 !important}",
+        ).joinToString("\n")
+
+        /** Sign-in prompts, Premium and app-install promos: nothing a signed-out viewer can act on. */
+        private val NAG_CSS = listOf(
+            "ytm-mealbar-promo-renderer", ".mealbar-promo-renderer", "ytm-upsell-dialog-renderer",
+            "ytm-statement-banner-renderer", "ytm-sign-in-promo-renderer", "ytm-account-promo-renderer",
+            ".mobile-topbar-header-sign-in-button", "ytm-open-app-button-renderer", "ytm-app-promo-renderer",
+            "ytm-inline-survey-renderer", "ytm-brand-video-singleton-renderer",
+        ).joinToString(",") + "{display:none !important}"
+
         /** The app's CSS for YouTube pages under [settings]. */
         fun css(settings: Settings): String = buildList {
             add(
@@ -69,9 +98,11 @@ internal class PageScripts(assets: AssetManager) {
                     ".ad-container,ytm-player-ad,ytm-ad-slot-renderer,ad-slot-renderer," +
                     "ytm-rich-grid-slot-renderer:has(ytm-ad-slot-renderer){display:none !important}",
             )
-            // The app has its own bottom navigation, so YouTube's pivot bar goes.
+            // The app is the chrome: YouTube's pivot bar (the app has its navigation bar), header and nags go.
             add("ytm-pivot-bar-renderer{display:none !important}")
-            add("ytm-app,#app{padding-bottom:0 !important}")
+            add("ytm-app,#app,[has-pivot-bar=\"true\"] ytm-app{padding-bottom:0 !important}")
+            add(HEADER_CSS)
+            add(NAG_CSS)
             if (settings.hideShorts) {
                 add(
                     "ytm-reel-shelf-renderer,ytm-rich-section-renderer:has([href*=\"/shorts\"])," +

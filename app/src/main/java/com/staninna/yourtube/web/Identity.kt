@@ -103,17 +103,19 @@ sealed class IdentityStrategy {
 
 /** The cookies a new identity starts with, so YouTube skips consent and matches the device. */
 data class IdentitySeed(val dark: Boolean, val locale: Locale) {
-    fun cookies(): List<String> = listOf("SOCS=${YouTube.SOCS_REJECT_ALL}", "PREF=${pref()}")
-        .map { "$it; Domain=.youtube.com; Path=/; Secure; Max-Age=$MAX_AGE_SECONDS" }
+    fun cookies(): List<String> = listOf(cookie("SOCS", YouTube.SOCS_REJECT_ALL), cookie("PREF", pref()))
 
-    /** `f6=400` is YouTube's dark theme flag and `f6=80000` its light one (measured on m.youtube.com). */
+    /** The theme flag (see [ThemePref]), then language and region. */
     internal fun pref(): String = buildList {
-        add("f6=" + if (dark) "400" else "80000")
+        add(ThemePref.withTheme(null, dark))
         locale.language.takeIf { it.isNotEmpty() }?.let { add("hl=$it") }
         locale.country.takeIf { it.length == 2 }?.let { add("gl=$it") }
     }.joinToString("&")
 
-    private companion object {
-        const val MAX_AGE_SECONDS = 400L * 24 * 60 * 60
+    companion object {
+        private const val MAX_AGE_SECONDS = 400L * 24 * 60 * 60
+
+        /** A `Set-Cookie` string for YouTube's whole domain. */
+        fun cookie(name: String, value: String) = "$name=$value; Domain=.youtube.com; Path=/; Secure; Max-Age=$MAX_AGE_SECONDS"
     }
 }

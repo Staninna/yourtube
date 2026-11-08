@@ -75,6 +75,11 @@ data class PlaybackEvent(
     val videoId: String,
     val position: Double,
     val duration: Double,
+    /**
+     * The video element's own `paused` at the event. Messages from a page script without the field
+     * read pause and end as paused and everything else as playing.
+     */
+    val paused: Boolean = kind == PlaybackKind.PAUSE || kind == PlaybackKind.ENDED,
 ) : BridgeMessage
 
 /** The page asks where [videoId] should start. Answered with a [ResumeReply]. */

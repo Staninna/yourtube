@@ -1,6 +1,7 @@
 package com.staninna.yourtube
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,7 +14,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.staninna.yourtube.ui.TubeRoot
-import com.staninna.yourtube.ui.TubeTheme
+import com.staninna.yourtube.ui.theme.TubeTheme
 import com.staninna.yourtube.web.WebViewHost
 import com.staninna.yourtube.web.WebViewStartup
 import kotlinx.coroutines.launch
@@ -46,6 +47,15 @@ class MainActivity : ComponentActivity() {
                 TubeRoot(vm = vm, host = host)
             }
         }
+    }
+
+    /**
+     * Config changes never recreate the Activity (D2). Compose follows them by itself; YouTube's theme
+     * lives in a cookie, so the WebView host follows a light/dark switch.
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        host.syncTheme(playing = vm.playing.value)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

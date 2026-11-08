@@ -108,7 +108,10 @@
         }
         report('metadata')
       }
-      post({ type: 'playback', kind: KINDS[e.type], videoId: id, position: finite(video.currentTime), duration: finite(video.duration) })
+      post({
+        type: 'playback', kind: KINDS[e.type], videoId: id, paused: video.paused,
+        position: finite(video.currentTime), duration: finite(video.duration),
+      })
     }
     Object.keys(KINDS).forEach(function (type) { document.addEventListener(type, onMedia, true) })
 

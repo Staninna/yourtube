@@ -4,12 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.staninna.yourtube.data.PlaybackKind
 import com.staninna.yourtube.data.FeedVideo
+import com.staninna.yourtube.data.HistoryEntry
+import com.staninna.yourtube.data.WatchProgress
 import com.staninna.yourtube.data.ItemType
 import com.staninna.yourtube.data.Library
 import com.staninna.yourtube.data.StarredItem
 import com.staninna.yourtube.data.Store
 import com.staninna.yourtube.feed.FeedClient
 import com.staninna.yourtube.page.ChannelResolver
+import com.staninna.yourtube.page.NowPlaying
 import com.staninna.yourtube.page.PageIdentity
 import com.staninna.yourtube.page.starItem
 import com.staninna.yourtube.web.PageListener
@@ -29,7 +32,12 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-enum class Tab { WATCH, LIBRARY, HISTORY, FEEDS }
+enum class Tab { WATCH, FEEDS, LIBRARY, HISTORY }
+
+/** Something the user should hear about once, with a way to take it back. */
+sealed interface UiEvent {
+    data class HistoryCleared(val entries: List<HistoryEntry>) : UiEvent
+}
 
 class MainViewModel(
     private val store: Store,
@@ -59,6 +67,20 @@ class MainViewModel(
     private val _playing = MutableStateFlow(false)
     val playing: StateFlow<Boolean> = _playing.asStateFlow()
 
+    /** The video loaded in Watch, for the now-playing bar on the native tabs. */
+    val nowPlaying: StateFlow<NowPlaying?> = combine(page, store.history, playing, NowPlaying::of)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Watch progress per video id, for the bars under thumbnails. */
+    val progress: StateFlow<Map<String, WatchProgress>> = store.history
+        .map { history -> history.mapNotNull { e -> WatchProgress.of(e)?.let { e.videoId to it } }.toMap() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    private val _events = Channel<UiEvent>(Channel.BUFFERED)
+
+    /** One-off notices for the snackbar. */
+    val events: Flow<UiEvent> = _events.receiveAsFlow()
+
     private val opens = Channel<String>(Channel.BUFFERED)
     private var openedAnything = false
 
@@ -70,6 +92,10 @@ class MainViewModel(
 
     private val _feedsLoading = MutableStateFlow(false)
     val feedsLoading: StateFlow<Boolean> = _feedsLoading.asStateFlow()
+
+    /** Whether any channel is starred; without one Feeds has nothing to fetch. */
+    val hasSubscriptions: StateFlow<Boolean> = store.library.map(::anySubscription)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, anySubscription(store.library.value))
 
     init {
         // A video can start playing before the player confirms its title; fill it in once it does.
@@ -94,10 +120,19 @@ class MainViewModel(
         opens.trySend(url)
     }
 
+    /** Opens YouTube's results for [query] in Watch. Returns false, and does nothing, for a blank query. */
+    fun search(query: String): Boolean {
+        val url = YouTube.searchUrl(query) ?: return false
+        open(url)
+        return true
+    }
+
     // --- PageListener: called on the main thread with decoded bridge messages ---
 
     override fun onNavigated(url: String) {
         currentUrl.value = url
+        // Leaving a video takes its player down without a pause event; the next video reports its own play.
+        if (PageIdentity.fromUrl(url) !is PageIdentity.Video) _playing.value = false
     }
 
     override fun onPageReport(report: PageReport) {
@@ -109,9 +144,9 @@ class MainViewModel(
 
     override fun onPlayback(event: PlaybackEvent) {
         when (event.kind) {
-            PlaybackKind.PLAY -> _playing.value = true
-            PlaybackKind.PAUSE, PlaybackKind.ENDED -> _playing.value = false
-            PlaybackKind.TIME, PlaybackKind.METADATA -> Unit
+            PlaybackKind.PLAY, PlaybackKind.PAUSE, PlaybackKind.ENDED, PlaybackKind.TIME ->
+                _playing.value = !event.paused && event.kind != PlaybackKind.ENDED
+            PlaybackKind.METADATA -> Unit
         }
         val meta = (page.value as? PageIdentity.Video)?.meta?.takeIf { it.videoId == event.videoId }
         store.recordPlayback(event.kind, event.videoId, event.position, event.duration, meta)
@@ -127,7 +162,15 @@ class MainViewModel(
 
     fun toggleStar(item: StarredItem) = store.toggleStar(item)
 
-    fun clearHistory() = store.clearHistory()
+    /** Clears history and resume positions, offering Undo. */
+    fun clearHistory() {
+        val cleared = history.value
+        if (cleared.isEmpty()) return
+        store.clearHistory()
+        _events.trySend(UiEvent.HistoryCleared(cleared))
+    }
+
+    fun undoClearHistory(event: UiEvent.HistoryCleared) = store.restoreHistory(event.entries)
 
     private suspend fun resolve(page: PageIdentity.Channel) {
         if (channels.resolve(page.path) == null) Diagnostics.count("channel.unresolved", page.path)
@@ -151,13 +194,15 @@ class MainViewModel(
         }
     }
 
-    // Stage 3's Settings skeleton binds these.
+    // --- settings ---
+
     fun setHideShorts(enabled: Boolean) = store.updateSettings { it.copy(hideShorts = enabled) }
     fun setDynamicColor(enabled: Boolean) = store.updateSettings { it.copy(dynamicColor = enabled) }
 
     companion object {
         /** A cold launch opens Feeds, or Library when there is nothing to feed from. */
-        fun startTab(library: Library): Tab =
-            if (library.items.any { it.type == ItemType.CHANNEL }) Tab.FEEDS else Tab.LIBRARY
+        fun startTab(library: Library): Tab = if (anySubscription(library)) Tab.FEEDS else Tab.LIBRARY
+
+        private fun anySubscription(library: Library) = library.items.any { it.type == ItemType.CHANNEL }
     }
 }

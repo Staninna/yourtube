@@ -20,19 +20,26 @@ import java.net.URLDecoder
  */
 sealed interface PageIdentity {
 
+    /** The page's confirmed title (video, channel or playlist name), or null while unknown. */
+    val title: String?
+
     /** [meta] is null until the player confirms this video. */
-    data class Video(val videoId: String, val meta: VideoMeta?) : PageIdentity
+    data class Video(val videoId: String, val meta: VideoMeta?) : PageIdentity {
+        override val title: String? get() = meta?.title
+    }
 
     /**
      * [path] is the channel's page path without sub-tabs (`/@handle`, `/channel/UC...`, `/c/name`),
      * lowercased except for UC ids. It keys the channel cache. [channelId] is known from `/channel/`
      * paths only.
      */
-    data class Channel(val path: String, val channelId: String?, val title: String?) : PageIdentity
+    data class Channel(val path: String, val channelId: String?, override val title: String?) : PageIdentity
 
-    data class Playlist(val playlistId: String, val title: String?) : PageIdentity
+    data class Playlist(val playlistId: String, override val title: String?) : PageIdentity
 
-    data object Other : PageIdentity
+    data object Other : PageIdentity {
+        override val title: String? get() = null
+    }
 
     companion object {
         /** The identity [url] alone gives: type and id, nothing the page has to confirm. */

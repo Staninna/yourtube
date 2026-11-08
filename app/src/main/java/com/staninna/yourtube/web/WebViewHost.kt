@@ -6,9 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
-import android.graphics.Color
 import android.net.Uri
 import android.util.Log
+import android.view.ViewGroup
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -17,6 +17,7 @@ import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.core.os.ConfigurationCompat
 import androidx.lifecycle.lifecycleScope
+import com.staninna.yourtube.YouTube
 import com.staninna.yourtube.data.Settings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,8 +37,21 @@ data class NavState(
     val error: LoadError? = null,
 )
 
-/** A main-frame load that failed. */
-data class LoadError(val url: String, val description: String)
+/**
+ * A main-frame load that failed. [description] is Chromium's error name, such as `net::ERR_TIMED_OUT`;
+ * [offline] says the device could not reach the network at all, as opposed to YouTube failing.
+ */
+data class LoadError(val url: String, val description: String, val offline: Boolean) {
+    companion object {
+        /**
+         * Whether a `WebViewClient.ERROR_*` code means no connection. WebView reports a disconnected
+         * device and a failed DNS lookup as [WebViewClient.ERROR_HOST_LOOKUP], and an unreachable
+         * address as [WebViewClient.ERROR_CONNECT].
+         */
+        fun isOffline(errorCode: Int): Boolean =
+            errorCode == WebViewClient.ERROR_HOST_LOOKUP || errorCode == WebViewClient.ERROR_CONNECT
+    }
+}
 
 /** The app's WebView: it carries the identity it was bound to, so its release can clear it. */
 class TubeWebView internal constructor(context: Context, internal val identity: Identity) : WebView(context)
@@ -81,13 +95,22 @@ class WebViewHost(
     private var requestedUrl: String? = null
     private var appliedCss: String = PageScripts.css(settings.value)
 
+    /** The theme the current identity's `PREF` cookie carries: seeded, then kept in step by [syncTheme]. */
+    private var syncedDark = false
+
     /** Creates the WebView for the current generation. Only the Compose factory calls this. */
     fun create(context: Context): TubeWebView {
         val identity = checkNotNull(identity) { "create() needs a ready identity" }
         val view = TubeWebView(context, identity)
         identity.bind(view) // must be the first call on the new WebView
+        // Explicit, not wrap_content: a WebView laid out to wrap its content gets a 0 px tall layout
+        // viewport, so `100vh` is 0 and YouTube takes the page for landscape (a short, letterboxed
+        // player and misplaced panels).
+        view.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         configure(view)
         webView = view
+        // The theme may have changed while this identity was being prepared.
+        syncTheme(view, playing = false)
         pendingUrl?.let {
             pendingUrl = null
             view.loadUrl(it)
@@ -112,6 +135,38 @@ class WebViewHost(
 
     fun goBack() {
         webView?.goBack()
+    }
+
+    /** Loads the failed URL again after a main-frame error. */
+    fun retry() {
+        val failed = nav.value.error?.url ?: return
+        load(failed)
+    }
+
+    /**
+     * Follows the system theme after a configuration change. A WebView that does not exist yet
+     * catches up in [create].
+     */
+    fun syncTheme(playing: Boolean) {
+        webView?.let { syncTheme(it, playing) }
+    }
+
+    /**
+     * Sets [view]'s background to YouTube's for the current theme, and brings the identity's `PREF`
+     * theme flag along when it differs from [syncedDark]; [ThemeSync] decides whether to reload.
+     */
+    private fun syncTheme(view: TubeWebView, playing: Boolean) {
+        val dark = isDark()
+        // YouTube's own background, so a load never flashes another color.
+        view.setBackgroundColor(YouTube.pageBackground(dark))
+        val action = ThemeSync.decide(syncedDark, dark, pageLoaded = view.url != null, playing = playing)
+        if (action == ThemeSync.NONE) return
+        syncedDark = dark
+        val cookies = view.identity.cookies
+        val pref = ThemePref.withTheme(ThemePref.read(cookies.getCookie(YouTube.HOME)), dark)
+        cookies.setCookie(YouTube.HOME, IdentitySeed.cookie("PREF", pref)) {
+            if (action == ThemeSync.REWRITE_AND_RELOAD && view === webView) view.reload()
+        }
     }
 
     /** The URL to bring back after process death or a new identity. */
@@ -141,7 +196,9 @@ class WebViewHost(
             }
             var seeded = false
             try {
-                next.seed(seed())
+                val seed = seed()
+                next.seed(seed)
+                syncedDark = seed.dark
                 seeded = true
             } finally {
                 // Superseded or cancelled mid-seed: nothing will ever bind this identity.
@@ -183,7 +240,8 @@ class WebViewHost(
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
             if (view !== webView || !request.isForMainFrame) return
-            _nav.update { it.copy(error = LoadError(request.url.toString(), error.description.toString())) }
+            val failed = LoadError(request.url.toString(), error.description.toString(), LoadError.isOffline(error.errorCode))
+            _nav.update { it.copy(error = failed) }
         }
 
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
@@ -201,7 +259,6 @@ class WebViewHost(
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun configure(view: WebView) {
-        view.setBackgroundColor(Color.BLACK)
         with(view.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -239,11 +296,13 @@ class WebViewHost(
         scripts.applyToCurrentPage(view, settings)
     }
 
+    private fun isDark(): Boolean =
+        activity.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+
     private fun seed(): IdentitySeed {
-        val config = activity.resources.configuration
-        val dark = config.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
         // An empty locale list does not happen on a real device; the JVM default is the same answer.
-        return IdentitySeed(dark, ConfigurationCompat.getLocales(config)[0] ?: Locale.getDefault())
+        val locale = ConfigurationCompat.getLocales(activity.resources.configuration)[0] ?: Locale.getDefault()
+        return IdentitySeed(isDark(), locale)
     }
 
     private companion object {

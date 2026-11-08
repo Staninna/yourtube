@@ -50,6 +50,16 @@ class BridgeMessageTest {
         }
     }
 
+    @Test fun playbackCarriesThePagesPausedFlag() {
+        val seekWhilePaused = """{"type":"playback","kind":"time","videoId":"v","paused":true,"position":40,"duration":300}"""
+        assertEquals(PlaybackEvent(PlaybackKind.TIME, "v", 40.0, 300.0, paused = true), BridgeMessage.decode(seekWhilePaused))
+    }
+
+    @Test fun playbackWithoutPausedReadsItFromTheKind() {
+        val decode = { kind: String -> (BridgeMessage.decode("""{"type":"playback","kind":"$kind","videoId":"v","position":1,"duration":2}""") as PlaybackEvent).paused }
+        assertEquals(listOf(false, true, true, false), listOf("play", "pause", "ended", "time").map(decode))
+    }
+
     @Test fun decodesAResumeRequest() =
         assertEquals(ResumeRequest("v"), BridgeMessage.decode("""{"type":"resume","videoId":"v"}"""))
 
