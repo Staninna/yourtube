@@ -79,7 +79,7 @@ class LibraryTextTest {
     @Test fun undoableNoticesOfferUndoAndTheCorruptNoticeOffersExport() {
         val undoable = listOf(
             UiEvent.HistoryCleared(emptyList()),
-            UiEvent.Unstarred(item(ItemType.VIDEO, null)),
+            UiEvent.Unstarred(listOf(item(ItemType.VIDEO, null))),
         )
         undoable.forEach { assertEquals("Undo", Notices.of(it).action) }
         assertEquals("Export", Notices.unreadableStore.action)

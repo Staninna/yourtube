@@ -184,8 +184,11 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
             )
         }
         // Settings and search are closed whenever picture-in-picture starts, as Watch shows then; the
-        // tag sheet is a window of its own and would cover the video.
-        if (!inPip) TagSheetHost(vm.library)
+        // tag sheets are windows of their own and would cover the video.
+        if (!inPip) {
+            TagSheetHost(vm.library)
+            BulkTagSheetHost(vm.library.selection)
+        }
     }
 }
 

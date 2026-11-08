@@ -13,7 +13,8 @@ sealed interface UiEvent {
 
     data class HistoryCleared(val entries: List<HistoryEntry>) : Undoable
     data class HistoryRemoved(val entry: HistoryEntry) : Undoable
-    data class Unstarred(val item: StarredItem) : Undoable
+    /** Items taken out of the library at once (one row, or a selection); Undo brings them all back. */
+    data class Unstarred(val items: List<StarredItem>) : Undoable
 
     /** The page skipped [videoId]'s [category] segment starting at [start]; Undo seeks back to it. */
     data class SegmentSkipped(val videoId: String, val category: SegmentCategory, val start: Double) : Undoable

@@ -1,31 +1,33 @@
 package com.staninna.yourtube.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -33,45 +35,54 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** A chip in a [FilterChipsRow]; [key] identifies it in the selection, [color] is its tag's dot. */
-data class ChipOption(val key: String, val label: String, val color: Color)
-
 /**
- * A scrolling row of filter chips with multi-select (Library tags, Feeds tags). A selected chip shows
- * a check, so selection never depends on color alone.
+ * One tag as a filter chip: its color dot while off, a check while on, and a dash when [partial] (on
+ * some of several items). A null [color] is a hollow ring, for Untagged. [count] follows the name in a
+ * quieter color, read by TalkBack as [countDescription]. The chip's own semantics say "selected", and
+ * its touch target is 48 dp.
  */
 @Composable
-fun FilterChipsRow(options: List<ChipOption>, selected: Set<String>, onToggle: (String) -> Unit, modifier: Modifier = Modifier) {
-    LazyRow(
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(options, key = { it.key }) { option ->
-            TagChip(option.label, option.color, selected = option.key in selected, onClick = { onToggle(option.key) })
-        }
-    }
-}
-
-/**
- * One tag as a filter chip: its color dot while off, a check while on. The chip's own semantics say
- * "selected", and its touch target is 48 dp.
- */
-@Composable
-fun TagChip(label: String, color: Color, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun TagChip(
+    label: String,
+    color: Color?,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    partial: Boolean = false,
+    count: String? = null,
+    countDescription: String? = null,
+) {
     FilterChip(
         selected = selected,
         onClick = onClick,
         modifier = modifier,
-        label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        label = {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (count != null) {
+                    Text(
+                        count,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.semantics { countDescription?.let { contentDescription = it } },
+                    )
+                }
+            }
+        },
         leadingIcon = {
-            if (selected) {
-                Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize))
-            } else {
-                TagDot(color)
+            when {
+                selected -> Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize))
+                partial -> Icon(Icons.Filled.Remove, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize))
+                color == null -> UntaggedDot()
+                else -> TagDot(color)
             }
         },
     )
+}
+
+/** Untagged's mark: a ring where a tag has its dot. */
+@Composable
+fun UntaggedDot(modifier: Modifier = Modifier, size: Dp = 10.dp) {
+    Box(modifier.size(size).border(1.5.dp, MaterialTheme.colorScheme.onSurfaceVariant, CircleShape))
 }
 
 /** A tag's color as a small filled circle. */

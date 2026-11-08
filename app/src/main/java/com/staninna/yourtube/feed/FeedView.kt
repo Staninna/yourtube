@@ -6,7 +6,8 @@ import com.staninna.yourtube.data.ItemType
 import com.staninna.yourtube.data.Library
 import com.staninna.yourtube.data.LibraryFilter
 import com.staninna.yourtube.data.StarredItem
-import com.staninna.yourtube.data.Tag
+import com.staninna.yourtube.data.TagChoices
+import com.staninna.yourtube.data.TagFilter
 
 /**
  * One channel's state while the app runs. [videos] are its last uploads that came in (or were cached),
@@ -80,32 +81,33 @@ data class FeedResults(
     }
 }
 
-/** Feeds' in-memory choices: the tag chips and the pages revealed by Load more. */
-data class FeedControls(val selection: Set<String> = emptySet(), val pages: Int = 1)
+/** Feeds' in-memory choices: the tag filter and the pages revealed by Load more. */
+data class FeedControls(val filter: TagFilter = TagFilter(), val pages: Int = 1)
 
 /** What Feeds shows. */
 data class FeedView(
     /** The revealed pages of the merged list, newest first. */
     val videos: List<FeedVideo>,
-    /** Videos past the chips, revealed or not. */
+    /** Videos past the tag filter, revealed or not. */
     val matching: Int,
-    /** The tags on subscribed channels, in pool order, and the chips in effect (empty means all). */
-    val chips: List<Tag>,
-    val selected: Set<String>,
+    /** The tag filter sheet's choices over the subscribed channels, with the filter in effect. */
+    val tags: TagChoices,
+    /** Subscribed channels past the tag filter. */
+    val channels: Int,
     val subscriptions: Int,
     /** A subscribed channel is being fetched, or has not been yet. */
     val loading: Boolean,
-    /** Channels past the chips whose latest fetch failed, newest subscription first. */
+    /** Channels past the tag filter whose latest fetch failed, newest subscription first. */
     val failed: List<StarredItem>,
     /** Every one of [failed] failed for want of a connection. */
     val offline: Boolean,
     /** One of [failed] is being fetched again. */
     val retrying: Boolean,
-    /** Whether any subscribed channel has videos, chips aside. */
+    /** Whether any subscribed channel has videos, the tag filter aside. */
     val anyVideos: Boolean,
     /** Channel avatars by channel id, for the rows. */
     val avatars: Map<String, String>,
-    /** Fresh videos past the chips, for the "new videos" pill. */
+    /** Fresh videos past the tag filter, for the "new videos" pill. */
     val newVideos: Int,
     val pageSize: FeedPageSize,
 ) {
@@ -128,7 +130,7 @@ data class FeedView(
     enum class Status { NO_SUBSCRIPTIONS, LOADING, OFFLINE, FAILED, NO_MATCH, NO_VIDEOS, LIST }
 }
 
-/** Feeds' rules: every starred channel's uploads merged, filtered by tag chips, paged client-side. */
+/** Feeds' rules: every starred channel's uploads merged, filtered by tags, paged client-side. */
 object FeedRules {
     /** Channel fetches that run at once. */
     const val CONCURRENCY = 6
@@ -138,14 +140,14 @@ object FeedRules {
         library.items.filter { it.type == ItemType.CHANNEL }.mapTo(LinkedHashSet()) { it.id }
 
     /**
-     * The uploads of subscribed channels that carry any selected tag (all when none is), newest first,
-     * each video once, revealed [FeedControls.pages] at a time. Chips work as in Library's Subs segment:
-     * OR, and a chip no channel carries any more drops out of the selection. With [removeShorts] Shorts
-     * are left out, here and in every count.
+     * The uploads of subscribed channels past the tag filter, newest first, each video once, revealed
+     * [FeedControls.pages] at a time. The filter works as in Library's Subs segment (any or all of the
+     * selected tags, or untagged channels only), and a choice no channel offers any more drops out.
+     * With [removeShorts] Shorts are left out, here and in every count.
      */
     fun view(library: Library, results: FeedResults, controls: FeedControls, pageSize: FeedPageSize, removeShorts: Boolean): FeedView {
         val subs = subscriptions(library)
-        val chipView = LibraryFilter.view(library, ItemType.CHANNEL, controls.selection, query = "")
+        val chipView = LibraryFilter.view(library, ItemType.CHANNEL, controls.filter, query = "")
         val shown = chipView.items.flatMap { channel -> results.channels[channel.id]?.videos.orEmpty().map { named(it, channel) } }
             .filterNot { removeShorts && it.isShort }
             .distinctBy { it.videoId }
@@ -155,8 +157,8 @@ object FeedRules {
         return FeedView(
             videos = shown.take(controls.pages * pageSize.count),
             matching = shown.size,
-            chips = chipView.chips,
-            selected = chipView.selected,
+            tags = chipView.tags,
+            channels = chipView.items.size,
             subscriptions = subs.size,
             loading = subs.any { it in results.loading || it !in results.channels },
             failed = failed,
@@ -179,9 +181,8 @@ object FeedRules {
             feed.videos.orEmpty().filterNot { removeShorts && it.isShort }.maxOfOrNull { it.publishedAt }?.let { id to it }
         }.toMap()
 
-    /** The stored selection after tapping [tagId], by Library's Subs rule. */
-    fun toggleChip(library: Library, stored: Set<String>, tagId: String): Set<String> =
-        LibraryFilter.toggleChip(library, ItemType.CHANNEL, stored, tagId)
+    /** The filter in effect given the [stored] one, by Library's Subs rule; edits start from it. */
+    fun inEffect(library: Library, stored: TagFilter): TagFilter = LibraryFilter.inEffect(library, ItemType.CHANNEL, stored)
 
     /** An RSS entry without a channel name or title still gets a readable row: the subscription's title. */
     private fun named(video: FeedVideo, channel: StarredItem): FeedVideo = when {

@@ -1,20 +1,24 @@
 package com.staninna.yourtube.data
 
-/** What Library shows for one segment, after its tag chips and search. */
+import java.text.Collator
+import java.util.Locale
+
+/** What Library shows for one segment, after its tag filter and search. */
 data class LibraryView(
     val segment: ItemType,
-    /** The segment's items that pass the filter, newest first. */
+    /** The segment's items that pass the filter, in the chosen [sort]. */
     val items: List<StarredItem>,
-    /** The tags present on the segment's items, in pool order. */
-    val chips: List<Tag>,
-    /** The chips in effect: the stored selection minus chips no longer shown. Empty means all. */
-    val selected: Set<String>,
+    /** The tag filter sheet's choices over the segment, with the filter in effect. */
+    val tags: TagChoices,
+    val sort: LibrarySort,
     /** Items in the segment before any filter. */
     val segmentSize: Int,
     /** Items in the whole library. */
     val total: Int,
     /** Whether the segment is long enough for a search field; a query counts only then. */
     val searchable: Boolean,
+    /** Whether a search query narrows [items]. */
+    val searching: Boolean,
 ) {
     /** Why [items] is empty, when it is. */
     val emptyReason: EmptyReason?
@@ -28,39 +32,50 @@ data class LibraryView(
     enum class EmptyReason { LIBRARY, SEGMENT, NO_MATCH }
 }
 
-/** Library's segment, tag-chip and search rules. */
+/** Library's segment, tag filter, sort and search rules. */
 object LibraryFilter {
     /** A segment longer than this gets a search field. */
     const val SEARCH_THRESHOLD = 30
 
     /**
-     * [selection] is the stored chip selection for [segment]. Chips are OR: an item shows when it
-     * carries any selected tag. A selected chip that left the segment is dropped, and with none left
-     * the segment shows everything.
+     * [filter] is the stored tag filter for [segment]; a choice that left the segment drops out of it
+     * (see [TagChoices.of]). [sort] orders the segment; by name it compares titles as [locale] does,
+     * ignoring case, and keeps equal titles newest first.
      */
-    fun view(library: Library, segment: ItemType, selection: Set<String>, query: String): LibraryView {
-        val inSegment = library.items.filter { it.type == segment }.sortedByDescending { it.addedAt }
-        val present = presentTags(inSegment)
-        val chips = library.tags.filter { it.id in present }
-        val selected = selection intersect present
+    fun view(
+        library: Library,
+        segment: ItemType,
+        filter: TagFilter,
+        query: String,
+        sort: LibrarySort = LibrarySort.RECENT,
+        locale: Locale = Locale.getDefault(),
+    ): LibraryView {
+        val inSegment = sorted(library.items.filter { it.type == segment }, sort, locale)
+        val choices = TagChoices.of(inSegment, library.tags, filter)
         val searchable = inSegment.size > SEARCH_THRESHOLD
         val needle = query.trim().takeIf { searchable && it.isNotEmpty() }
-        val items = inSegment.filter { item ->
-            (selected.isEmpty() || item.tagIds.any { it in selected }) && (needle == null || matches(item, needle))
-        }
-        return LibraryView(segment, items, chips, selected, inSegment.size, library.items.size, searchable)
+        val items = inSegment.filter { item -> choices.filter.admits(item) && (needle == null || matches(item, needle)) }
+        return LibraryView(segment, items, choices, sort, inSegment.size, library.items.size, searchable, searching = needle != null)
     }
 
     /**
-     * The stored selection for [segment] after tapping [tagId]. It starts from the chips the segment
-     * shows now, so a chip that left the segment and comes back later is not still selected unseen.
+     * The filter in effect for [segment] given the [stored] one: what the sheet shows now, so a tag that
+     * left the segment and comes back later is not still selected unseen. Edits start from it.
      */
-    fun toggleChip(library: Library, segment: ItemType, stored: Set<String>, tagId: String): Set<String> {
-        val shown = stored intersect presentTags(library.items.filter { it.type == segment })
-        return if (tagId in shown) shown - tagId else shown + tagId
-    }
+    fun inEffect(library: Library, segment: ItemType, stored: TagFilter): TagFilter =
+        TagChoices.of(library.items.filter { it.type == segment }, library.tags, stored).filter
 
-    private fun presentTags(items: List<StarredItem>): Set<String> = items.flatMapTo(HashSet()) { it.tagIds }
+    private fun sorted(items: List<StarredItem>, sort: LibrarySort, locale: Locale): List<StarredItem> {
+        val newest = items.sortedByDescending { it.addedAt }
+        return when (sort) {
+            LibrarySort.RECENT -> newest
+            LibrarySort.NAME -> {
+                // SECONDARY ignores case but not accents; the sort is stable, so equal titles stay newest first.
+                val collator = Collator.getInstance(locale).apply { strength = Collator.SECONDARY }
+                newest.sortedWith { a, b -> collator.compare(a.title, b.title) }
+            }
+        }
+    }
 
     /** [item]'s tag names in pool order. */
     fun tagNames(item: StarredItem, tags: List<Tag>): List<String> = tags.filter { it.id in item.tagIds }.map { it.name }

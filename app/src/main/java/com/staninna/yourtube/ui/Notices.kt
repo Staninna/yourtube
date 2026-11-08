@@ -20,7 +20,10 @@ object Notices {
     fun of(event: UiEvent): Notice = when (event) {
         is UiEvent.HistoryCleared -> Notice("History cleared", "Undo")
         is UiEvent.HistoryRemoved -> Notice("Removed from history", "Undo")
-        is UiEvent.Unstarred -> Notice("Removed from your library", "Undo")
+        is UiEvent.Unstarred -> Notice(
+            if (event.items.size == 1) "Removed from your library" else "Removed ${event.items.size} items from your library",
+            "Undo",
+        )
         is UiEvent.SegmentSkipped -> Notice(ContentText.skipped(event.category), "Undo")
         is UiEvent.Imported -> Notice(importSummary(event.report))
         is UiEvent.ImportFailed -> Notice(problem(event.problem))

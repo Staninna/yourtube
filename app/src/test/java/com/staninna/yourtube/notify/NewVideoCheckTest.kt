@@ -136,7 +136,7 @@ class NewVideoCheckTest {
             if (id == "B") {
                 // Meanwhile Feeds learns a1's length and the user unsubscribes from B.
                 store.cacheFeeds(mapOf("A" to listOf(video("a1", "A", 500).copy(length = VideoLength.Known(90))), "C" to listOf(video("c1", "C", 1))))
-                store.unstar("B")
+                store.unstar(setOf("B"))
             }
             listOf(video("${id.lowercase()}2", id, 2_000, author = ""), video("${id.lowercase()}1", id, 500))
         }

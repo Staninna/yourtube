@@ -167,6 +167,8 @@ class MainViewModel(
             page.map { it as? PageIdentity.Channel }.distinctUntilChangedBy { it?.path }.filterNotNull()
                 .collect { launch { resolve(it) } }
         }
+        // Leaving Library ends its selection mode, however the tab changes (a tap, a link, back).
+        viewModelScope.launch { tab.collect { if (it != Tab.LIBRARY) library.selection.clear() } }
     }
 
     /** Switches tabs. The Watch tab with nothing opened yet shows YouTube's home. */

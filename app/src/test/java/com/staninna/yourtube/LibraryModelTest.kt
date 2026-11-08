@@ -1,8 +1,11 @@
 package com.staninna.yourtube
 
 import com.staninna.yourtube.data.ItemType
+import com.staninna.yourtube.data.LibrarySort
 import com.staninna.yourtube.data.StarredItem
 import com.staninna.yourtube.data.Store
+import com.staninna.yourtube.data.TagMatch
+import com.staninna.yourtube.data.TagState
 import com.staninna.yourtube.page.ChannelResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -19,7 +22,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-/** Starring, the tag sheet, Library's chips and avatar backfill, without a view model. */
+/** Starring, the tag sheet, Library's tag filter, sort and selection, and avatar backfill, without a view model. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryModelTest {
 
@@ -100,7 +103,7 @@ class LibraryModelTest {
         val channel = model.tagSheet.value!!.channel!!
         model.setSubscribed(channel, true)
         assertTrue(model.tagSheet.value!!.channelStarred)
-        val talks = store.createTag("Talks", attachTo = channelId)!!
+        val talks = store.createTag("Talks", attachTo = setOf(channelId))!!
         val before = store.library.value.items.first { it.id == channelId }
 
         model.setSubscribed(channel, false)
@@ -118,7 +121,7 @@ class LibraryModelTest {
         model.onStarClick()
         val channel = model.tagSheet.value!!.channel!!
         model.setSubscribed(channel, true)
-        store.createTag("Talks", attachTo = channelId)
+        store.createTag("Talks", attachTo = setOf(channelId))
         model.setSubscribed(channel, false)
         model.closeTagSheet()
         model.openTagSheet(videoId)
@@ -126,20 +129,170 @@ class LibraryModelTest {
         assertTrue("a later sheet subscribes afresh", store.library.value.items.first { it.id == channelId }.tagIds.isEmpty())
     }
 
-    @Test fun eachSegmentKeepsItsOwnChips() = runTest {
+    @Test fun eachSegmentKeepsItsOwnTagFilter() = runTest {
         val model = model()
         store.star(StarredItem(channelId, ItemType.CHANNEL, "C", url = "u", channelId = channelId, thumbnail = "https://a"))
         store.star(video)
-        val music = store.createTag("Music", attachTo = channelId)!!
-        store.setItemTag(videoId, music.id, attached = true)
+        val music = store.createTag("Music", attachTo = setOf(channelId))!!
+        store.setTag(setOf(videoId), music.id, attached = true)
 
         model.selectSegment(ItemType.CHANNEL)
         model.toggleTagFilter(music.id)
-        assertEquals(setOf(music.id), model.view.value.selected)
+        assertEquals(setOf(music.id), model.view.value.tags.filter.tags)
         model.selectSegment(ItemType.VIDEO)
-        assertTrue(model.view.value.selected.isEmpty())
+        assertTrue(model.view.value.tags.filter.tags.isEmpty())
         model.selectSegment(ItemType.CHANNEL)
-        assertEquals(setOf(music.id), model.view.value.selected)
+        assertEquals(setOf(music.id), model.view.value.tags.filter.tags)
+    }
+
+    private fun saved(id: String, title: String) = StarredItem(id, ItemType.VIDEO, title, url = "u")
+
+    private fun TestScope.threeVideos(): LibraryModel {
+        val model = model()
+        store.star(saved("a", "Alpha"))
+        store.star(saved("b", "Beta"))
+        store.star(saved("c", "Gamma"))
+        model.selectSegment(ItemType.VIDEO)
+        return model
+    }
+
+    @Test fun selectionTogglesSelectsAllAndEndsWithAnotherSegment() = runTest {
+        val model = threeVideos()
+        val selection = model.selection
+        selection.toggle("a")
+        selection.toggle("c")
+        assertEquals("in Library's order, newest first", listOf("c", "a"), selection.selected.value.toList())
+        selection.toggle("a")
+        assertEquals(setOf("c"), selection.selected.value)
+        selection.selectAll()
+        assertEquals(setOf("a", "b", "c"), selection.selected.value)
+        model.selectSegment(ItemType.CHANNEL)
+        assertTrue(selection.selected.value.isEmpty())
+    }
+
+    @Test fun aRowTheFilterHidesLeavesTheSelection() = runTest {
+        val model = threeVideos()
+        val music = store.createTag("Music", attachTo = setOf("a"))!!
+        model.selection.selectAll()
+        model.toggleTagFilter(music.id)
+        assertEquals(setOf("a"), model.selection.selected.value)
+    }
+
+    @Test fun aRowASearchHidSelectionStaysUnselectedOnceTheSearchClears() = runTest {
+        val model = model()
+        (1..31).forEach { store.star(saved("v$it", "Video $it")) }
+        model.selectSegment(ItemType.VIDEO)
+        model.selection.toggle("v1")
+        model.selection.toggle("v2")
+        model.setQuery("Video 2")
+        assertEquals(setOf("v2"), model.selection.selected.value)
+        model.setQuery("")
+        assertEquals("v1 does not come back selected", setOf("v2"), model.selection.selected.value)
+        model.setQuery("nothing like it")
+        model.setQuery("")
+        assertTrue("selection mode ended and stays ended", model.selection.selected.value.isEmpty())
+    }
+
+    @Test fun aRowRemovedAndBroughtBackIsNotSelected() = runTest {
+        val model = threeVideos()
+        model.selection.toggle("b")
+        model.selection.tag()
+        model.removeFromLibrary("b")
+        assertTrue(model.selection.selected.value.isEmpty())
+        model.undoUnstar(events.single() as UiEvent.Unstarred)
+        assertEquals(3, store.library.value.items.size)
+        assertTrue("Undo does not turn selection mode back on", model.selection.selected.value.isEmpty())
+    }
+
+    @Test fun theBulkSheetKeepsItsRowsWhenATapMovesThemOutOfTheFilter() = runTest {
+        val model = threeVideos()
+        val music = store.createTag("Music", attachTo = setOf("c"))!!
+        model.toggleUntaggedFilter()
+        assertEquals(listOf("b", "a"), model.view.value.items.map { it.id })
+        model.selection.toggle("a")
+        model.selection.toggle("b")
+        model.selection.tag()
+        model.selection.setTag(music.id, attached = true)
+        val sheet = model.selection.bulkTags.value
+        assertEquals("the sheet stays open on its rows", setOf("a", "b"), sheet?.itemIds)
+        assertEquals(TagState.ALL, sheet!!.tags.single { it.first.id == music.id }.second)
+        model.selection.createTag("Talks")
+        val talks = store.library.value.tags.single { it.name == "Talks" }
+        assertEquals(setOf("a", "b"), store.library.value.items.filter { talks.id in it.tagIds }.map { it.id }.toSet())
+        assertEquals("c carries Music only", setOf(music.id), store.library.value.items.single { it.id == "c" }.tagIds)
+    }
+
+    @Test fun aChoiceThatDroppedOutStaysOutWhenAnItemBringsItBack() = runTest {
+        val model = threeVideos()
+        val music = store.createTag("Music", attachTo = setOf("c"))!!
+        model.toggleUntaggedFilter()
+        store.setTag(setOf("a", "b"), music.id, attached = true)
+        assertFalse(model.view.value.tags.filter.untagged)
+        store.star(saved("d", "Delta"))
+        assertFalse("Untagged does not come back", model.view.value.tags.filter.untagged)
+        assertEquals(4, model.view.value.items.size)
+    }
+
+    @Test fun removingTheSelectionHasOneUndoForAll() = runTest {
+        val model = threeVideos()
+        model.selection.toggle("a")
+        model.selection.toggle("b")
+        model.selection.remove()
+        assertEquals(listOf("c"), store.library.value.items.map { it.id })
+        assertTrue("selection mode ends", model.selection.selected.value.isEmpty())
+        val event = events.single() as UiEvent.Unstarred
+        assertEquals(setOf("a", "b"), event.items.map { it.id }.toSet())
+        model.undoUnstar(event)
+        assertEquals(listOf("c", "b", "a"), store.library.value.items.map { it.id })
+    }
+
+    @Test fun tagOpensTheItemsOwnSheetForOneAndTheBulkSheetForMore() = runTest {
+        val model = threeVideos()
+        model.selection.toggle("b")
+        model.selection.tag()
+        assertEquals("b", model.tagSheet.value?.item?.id)
+        assertNull(model.selection.bulkTags.value)
+        model.closeTagSheet()
+
+        val music = store.createTag("Music", attachTo = setOf("a"))!!
+        model.selection.toggle("a")
+        model.selection.tag()
+        assertNull(model.tagSheet.value)
+        assertEquals(listOf(music to TagState.SOME), model.selection.bulkTags.value!!.tags)
+
+        model.selection.setTag(music.id, attached = true)
+        assertEquals(listOf(music to TagState.ALL), model.selection.bulkTags.value!!.tags)
+        model.selection.createTag("Talks")
+        val talks = store.library.value.tags.single { it.name == "Talks" }
+        assertEquals(setOf("a", "b"), store.library.value.items.filter { talks.id in it.tagIds }.map { it.id }.toSet())
+
+        model.selection.clear()
+        assertNull("the bulk sheet closes with selection mode", model.selection.bulkTags.value)
+    }
+
+    @Test fun theSortIsStoredAndOrdersTheSegment() = runTest {
+        val model = threeVideos()
+        assertEquals(listOf("c", "b", "a"), model.view.value.items.map { it.id })
+        model.setSort(LibrarySort.NAME)
+        assertEquals(LibrarySort.NAME, store.settings.value.librarySort)
+        assertEquals(listOf("a", "b", "c"), model.view.value.items.map { it.id })
+    }
+
+    @Test fun untaggedAndMatchAllApplyToTheCurrentSegment() = runTest {
+        val model = threeVideos()
+        val music = store.createTag("Music", attachTo = setOf("a", "b"))!!
+        val talks = store.createTag("Talks", attachTo = setOf("b"))!!
+        model.toggleUntaggedFilter()
+        assertEquals(listOf("c"), model.view.value.items.map { it.id })
+        model.toggleTagFilter(music.id)
+        model.toggleTagFilter(talks.id)
+        assertFalse(model.view.value.tags.filter.untagged)
+        assertEquals(listOf("b", "a"), model.view.value.items.map { it.id })
+        model.setTagMatch(TagMatch.ALL)
+        assertEquals(listOf("b"), model.view.value.items.map { it.id })
+        model.clearTagFilter()
+        assertEquals(3, model.view.value.items.size)
+        assertEquals(TagMatch.ALL, model.view.value.tags.filter.match)
     }
 
     @Test fun missingAvatarsAreBackfilledOnce() = runTest {

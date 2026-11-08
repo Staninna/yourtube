@@ -49,7 +49,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -64,10 +63,8 @@ import com.staninna.yourtube.data.FeedVideo
 import com.staninna.yourtube.data.WatchProgress
 import com.staninna.yourtube.feed.FeedView
 import com.staninna.yourtube.ui.components.ChannelAvatar
-import com.staninna.yourtube.ui.components.ChipOption
 import com.staninna.yourtube.ui.components.EmptyState
 import com.staninna.yourtube.ui.components.ErrorState
-import com.staninna.yourtube.ui.components.FilterChipsRow
 import com.staninna.yourtube.ui.components.LoadingState
 import com.staninna.yourtube.ui.components.MediaLeading
 import com.staninna.yourtube.ui.components.MediaRow
@@ -77,7 +74,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Newest uploads of every starred channel, merged newest first: tag chips over the list, pull to
+ * Newest uploads of every starred channel, merged newest first: a tag filter over the list, pull to
  * refresh, a page at a time with Load more, a quiet notice with Retry for channels that failed, and a
  * "new videos" pill when a refresh brings some while the list is scrolled down.
  */
@@ -87,8 +84,8 @@ fun FeedsScreen(vm: MainViewModel, onSearch: () -> Unit, onSettings: () -> Unit)
     val view by vm.feeds.view.collectAsStateWithLifecycle()
     val progress by vm.progress.collectAsStateWithLifecycle()
     val feeds = vm.feeds
-    // A new chip selection is a new list, so it starts at its top.
-    val list = remember(view.selected) { LazyListState() }
+    // A new tag filter is a new list, so it starts at its top.
+    val list = remember(view.tags.filter) { LazyListState() }
     // The bar tints from where the list is; with no list on screen there is nothing under it.
     val notScrolled = rememberScrollState()
 
@@ -113,13 +110,8 @@ fun FeedsScreen(vm: MainViewModel, onSearch: () -> Unit, onSettings: () -> Unit)
             return@TabScaffold
         }
         Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
-            AnimatedVisibility(view.chips.isNotEmpty()) {
-                FilterChipsRow(
-                    options = view.chips.map { ChipOption(it.id, it.name, Color(it.color)) },
-                    selected = view.selected,
-                    onToggle = feeds::toggleTag,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
-                )
+            AnimatedVisibility(view.tags.tags.isNotEmpty()) {
+                TagFilterBar(view.tags, feeds, Noun("channel", "channels"), Modifier.padding(top = 4.dp))
             }
             val pull = rememberPullToRefreshState()
             PullToRefreshBox(
@@ -157,17 +149,15 @@ private fun FeedsContent(
         FeedView.Status.FAILED -> ErrorState(
             icon = Icons.Outlined.ErrorOutline,
             title = "YouTube didn't answer",
-            // With chips on, only the channels past them are in question.
-            body = (if (view.selected.isEmpty()) "None of your channels" else "None of these channels") +
+            // With a tag filter on, only the channels past it are in question.
+            body = (if (view.tags.filter.active) "None of these channels" else "None of your channels") +
                 " could be read just now. Try again in a moment.",
             action = StateAction("Retry", feeds::retryFailed),
         )
-        FeedView.Status.NO_MATCH -> EmptyState(
-            icon = Icons.Outlined.FilterAltOff,
-            title = "Nothing under these tags",
-            body = "The channels with these tags have no videos to show.",
-            action = StateAction("Show all", feeds::clearTags),
-        )
+        FeedView.Status.NO_MATCH -> {
+            val copy = TagFilterText.feedNoMatch(view)
+            EmptyState(icon = Icons.Outlined.FilterAltOff, title = copy.title, body = copy.body, action = StateAction(copy.action.label, feeds::clearTagFilter))
+        }
         FeedView.Status.NO_VIDEOS -> EmptyState(
             icon = Icons.Outlined.VideocamOff,
             title = "No videos yet",
@@ -187,7 +177,7 @@ private fun FeedList(
     onOpen: (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    // Keyed on the list, which is new for each chip selection.
+    // Keyed on the list, which is new for each tag filter.
     val atTop by remember(list) { derivedStateOf { list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset == 0 } }
     val firstKey: Any? = if (view.failed.isNotEmpty()) NOTICE_KEY else view.videos.firstOrNull()?.videoId
     KeepTopInView(list, firstKey)

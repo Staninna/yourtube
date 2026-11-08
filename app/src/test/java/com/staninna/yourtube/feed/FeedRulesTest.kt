@@ -6,6 +6,8 @@ import com.staninna.yourtube.data.ItemType
 import com.staninna.yourtube.data.Library
 import com.staninna.yourtube.data.StarredItem
 import com.staninna.yourtube.data.Tag
+import com.staninna.yourtube.data.TagFilter
+import com.staninna.yourtube.data.TagMatch
 import com.staninna.yourtube.feed.FeedView.Status
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -13,7 +15,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Merge and sort, chips, paging, statuses, fresh videos and the cache, as pure rules. */
+/** Merge and sort, the tag filter, paging, statuses, fresh videos and the cache, as pure rules. */
 class FeedRulesTest {
 
     private val music = Tag("t-music", "Music", 0)
@@ -76,20 +78,40 @@ class FeedRulesTest {
         assertFalse(last.hasMore)
     }
 
-    @Test fun chipsFilterByTheChannelsTagsWithOr() {
-        val v = view(controls = FeedControls(selection = setOf(music.id)))
-        assertEquals(listOf(music, news), v.chips)
+    @Test fun theTagFilterMatchesAnyTagByDefault() {
+        val v = view(controls = FeedControls(filter = TagFilter(setOf(music.id))))
+        assertEquals(listOf(music, news), v.tags.tags)
+        assertEquals(mapOf(music.id to 1, news.id to 1), v.tags.counts)
+        assertEquals("C carries no tag", 1, v.tags.untagged)
         assertEquals(listOf("a1", "a2"), v.videos.map { it.videoId })
-        val both = view(controls = FeedControls(selection = setOf(music.id, news.id)))
+        val both = view(controls = FeedControls(filter = TagFilter(setOf(music.id, news.id))))
         assertEquals(listOf("a1", "b1", "a2"), both.videos.map { it.videoId })
     }
 
-    @Test fun aChipNoChannelCarriesAnyMoreDropsOut() {
-        val v = view(controls = FeedControls(selection = setOf("gone")))
-        assertEquals(emptySet<String>(), v.selected)
+    @Test fun matchingAllTagsCanLeaveNoChannel() {
+        val all = view(controls = FeedControls(filter = TagFilter(setOf(music.id, news.id), match = TagMatch.ALL)))
+        assertEquals(0, all.channels)
+        assertTrue(all.videos.isEmpty())
+        assertEquals(Status.NO_MATCH, all.status)
+
+        val both = library.copy(items = library.items.map { if (it.id == "B") it.copy(tagIds = setOf(music.id, news.id)) else it })
+        val v = view(lib = both, controls = FeedControls(filter = TagFilter(setOf(music.id, news.id), match = TagMatch.ALL)))
+        assertEquals("B also lists a1", listOf("a1", "b1"), v.videos.map { it.videoId })
+    }
+
+    @Test fun untaggedShowsOnlyChannelsWithoutTags() {
+        val v = view(controls = FeedControls(filter = TagFilter(untagged = true)))
+        assertEquals(listOf("c1"), v.videos.map { it.videoId })
+        assertEquals(1, v.channels)
+    }
+
+    @Test fun aChoiceNoChannelOffersAnyMoreDropsOut() {
+        val v = view(controls = FeedControls(filter = TagFilter(setOf("gone"))))
+        assertEquals(emptySet<String>(), v.tags.filter.tags)
         assertEquals(4, v.videos.size)
-        assertEquals(setOf(music.id), FeedRules.toggleChip(library, setOf("gone"), music.id))
-        assertEquals(emptySet<String>(), FeedRules.toggleChip(library, setOf(music.id), music.id))
+        assertEquals(TagFilter(), FeedRules.inEffect(library, TagFilter(setOf("gone"))))
+        val allTagged = library.copy(items = library.items.filterNot { it.id == "C" })
+        assertEquals(TagFilter(), FeedRules.inEffect(allTagged, TagFilter(untagged = true)))
     }
 
     @Test fun aFailedChannelKeepsItsLastVideosAndIsNamed() {
@@ -105,7 +127,7 @@ class FeedRulesTest {
 
     @Test fun failuresBehindUnselectedChipsAreNotShown() {
         val failed = results.finish("C", ChannelFetch.Failed(FetchFailure.UNAVAILABLE))
-        assertEquals(emptyList<StarredItem>(), view(failed, FeedControls(selection = setOf(music.id))).failed)
+        assertEquals(emptyList<StarredItem>(), view(failed, FeedControls(filter = TagFilter(setOf(music.id)))).failed)
     }
 
     @Test fun statusSaysWhyTheListIsEmpty() {
@@ -126,7 +148,7 @@ class FeedRulesTest {
         assertEquals(Status.NO_VIDEOS, view(empty).status)
 
         val onlyC = FeedResults().finish("A", ok()).finish("B", ok()).finish("C", ok(video("c1", "C", 1)))
-        assertEquals(Status.NO_MATCH, view(onlyC, FeedControls(selection = setOf(music.id))).status)
+        assertEquals(Status.NO_MATCH, view(onlyC, FeedControls(filter = TagFilter(setOf(music.id)))).status)
     }
 
     @Test fun refreshingIsFetchingBehindAListOnScreen() {
@@ -144,7 +166,7 @@ class FeedRulesTest {
             .finish("B", ok(video("n1", "B", 60), video("b1", "B", 40)))
         assertEquals(setOf("n2", "n1"), refreshed.fresh)
         assertEquals(2, view(refreshed).newVideos)
-        assertEquals("the pill counts only what the chips let through", 1, view(refreshed, FeedControls(selection = setOf(music.id))).newVideos)
+        assertEquals("the pill counts only what the chips let through", 1, view(refreshed, FeedControls(filter = TagFilter(setOf(music.id)))).newVideos)
     }
 
     @Test fun aChannelsFirstListIsNotNews() {

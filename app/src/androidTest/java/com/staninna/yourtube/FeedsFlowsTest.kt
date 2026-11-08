@@ -44,7 +44,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
- * The stage 5 flows on the real shell: a cold start from the cache, Load more, tag chips, a partial
+ * The stage 5 flows on the real shell: a cold start from the cache, Load more, the tag filter, a partial
  * failure with Retry, the page-size setting, and the new-videos pill. Feeds fetches through a fake, so every test runs offline. Three
  * channels upload 30 videos each, interleaved: Alpha 00, Beta 00, Gamma 00, Alpha 01, and so on.
  */
@@ -86,7 +86,7 @@ class FeedsFlowsTest {
 
     private fun subscribe(channelId: String, vararg tags: String) {
         store.star(StarredItem(channelId, ItemType.CHANNEL, names.getValue(channelId), url = "u", channelId = channelId))
-        tags.forEach { store.createTag(it, attachTo = channelId) }
+        tags.forEach { store.createTag(it, attachTo = setOf(channelId)) }
     }
 
     private fun setContent() {
@@ -129,22 +129,44 @@ class FeedsFlowsTest {
         compose.onAllNodesWithText("Load more").assertCountEquals(0)
     }
 
-    @Test fun aTagChipShowsOnlyItsChannels() {
+    @Test fun theTagFilterSheetFiltersByAnyAllAndUntagged() {
         subscribe(ALPHA, "Music")
         subscribe(BETA, "News")
         subscribe(GAMMA)
         setContent()
         waitForText("Beta 00")
+        compose.onNodeWithContentDescription("Tags: all").performClick()
         compose.onNodeWithText("Music").performClick()
+        compose.onNodeWithText("Done").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Filter by tags").fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithText("Alpha 00").assertIsDisplayed()
         compose.onNodeWithText("Alpha 01").assertIsDisplayed()
         compose.onAllNodesWithText("Beta 00").assertCountEquals(0)
         compose.onAllNodesWithText("Gamma 00").assertCountEquals(0)
 
-        // OR: a second chip adds its channels.
+        // Any: a second tag adds its channels.
+        compose.onNodeWithContentDescription("Tags: Music").performClick()
         compose.onNodeWithText("News").performClick()
+        compose.onNodeWithText("Done").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Filter by tags").fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithText("Beta 00").assertIsDisplayed()
         compose.onAllNodesWithText("Gamma 00").assertCountEquals(0)
+
+        // All: no channel carries both, and the empty state says so.
+        compose.onNodeWithContentDescription("Tags: any of Music or News").performClick()
+        compose.onNodeWithText("Match all").performClick()
+        compose.onNodeWithText("Done").performClick()
+        compose.onNodeWithText("No channel has all these tags").assertIsDisplayed()
+
+        // Untagged: Gamma alone; then the clear button shows everything again.
+        compose.onNodeWithContentDescription("Tags: all of Music and News").performClick()
+        compose.onNodeWithText("Untagged").performClick()
+        compose.onNodeWithText("Done").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Filter by tags").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithText("Gamma 00").assertIsDisplayed()
+        compose.onAllNodesWithText("Alpha 00").assertCountEquals(0)
+        compose.onNodeWithContentDescription("Clear tag filter").performClick()
+        compose.onNodeWithText("Alpha 00").assertIsDisplayed()
     }
 
     @Test fun aChannelThatFailsShowsANoticeAndRetryBringsItIn() {

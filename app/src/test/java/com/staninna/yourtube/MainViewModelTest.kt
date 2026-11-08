@@ -85,6 +85,21 @@ class MainViewModelTest {
         assertTrue("home loads once", opened.tryReceive().isFailure)
     }
 
+    @Test fun leavingLibraryEndsSelectionMode() = runTest {
+        val (vm, _) = viewModel()
+        store.star(StarredItem("v", ItemType.VIDEO, "V", url = "u"))
+        vm.selectTab(Tab.LIBRARY)
+        vm.library.selectSegment(ItemType.VIDEO)
+        vm.library.selection.toggle("v")
+        assertEquals(setOf("v"), vm.library.selection.selected.value)
+        vm.selectTab(Tab.FEEDS)
+        assertTrue(vm.library.selection.selected.value.isEmpty())
+        vm.selectTab(Tab.LIBRARY)
+        vm.library.selection.toggle("v")
+        vm.open("https://m.youtube.com/watch?v=dQw4w9WgXcQ")
+        assertTrue("a link that switches to Watch ends it too", vm.library.selection.selected.value.isEmpty())
+    }
+
     @Test fun watchTabAfterOpeningSomethingKeepsIt() = runTest {
         val (vm, opened) = viewModel()
         vm.open("https://m.youtube.com/watch?v=dQw4w9WgXcQ")

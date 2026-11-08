@@ -2,6 +2,9 @@ package com.staninna.yourtube
 
 import com.staninna.yourtube.data.FeedPageSize
 import com.staninna.yourtube.data.Store
+import com.staninna.yourtube.data.TagFilter
+import com.staninna.yourtube.data.TagFiltering
+import com.staninna.yourtube.data.TagMatch
 import com.staninna.yourtube.feed.ChannelFetch
 import com.staninna.yourtube.feed.FeedControls
 import com.staninna.yourtube.feed.FeedFetcher
@@ -26,7 +29,7 @@ import kotlinx.coroutines.sync.withPermit
 
 /**
  * Feeds as the screen uses it: every subscribed channel's uploads, fetched [FeedRules.CONCURRENCY] at a
- * time through [fetcher], merged, filtered by tag chips and paged. It starts from the store's feed
+ * time through [fetcher], merged, filtered by tags and paged. It starts from the store's feed
  * cache, so a cold start shows the last list at once; each channel's answer replaces its part and is
  * cached again. A channel is fetched when it is first seen (at start, or when subscribed) and on
  * refresh; a failed fetch keeps its last uploads. Everything runs on [scope], one coroutine at a time
@@ -36,7 +39,7 @@ class FeedsModel(
     private val store: Store,
     private val fetcher: FeedFetcher,
     private val scope: CoroutineScope,
-) {
+) : TagFiltering {
     private val results = MutableStateFlow(FeedResults.cached(store.feeds.value, FeedRules.subscriptions(store.library.value)))
     private val controls = MutableStateFlow(FeedControls())
     private val gate = Semaphore(FeedRules.CONCURRENCY)
@@ -58,6 +61,10 @@ class FeedsModel(
     }.stateIn(scope, SharingStarted.Eagerly, FeedRules.latestUploads(results.value, store.settings.value.removeShorts))
 
     init {
+        // A tag or Untagged that no subscribed channel offers any more leaves the filter for good.
+        scope.launch {
+            store.library.collect { lib -> controls.update { it.copy(filter = FeedRules.inEffect(lib, it.filter)) } }
+        }
         // Lists the background new-video check put in the cache show here at once.
         scope.launch {
             store.feeds.collect { cache ->
@@ -81,17 +88,20 @@ class FeedsModel(
     /** Fetches every subscribed channel again; what is on screen stays until each one answers. */
     fun refresh() = fetch(FeedRules.subscriptions(store.library.value))
 
-    /** Fetches again the failed channels the chips let through, the ones the notice names. */
+    /** Fetches again the failed channels the tag filter lets through, the ones the notice names. */
     fun retryFailed() = fetch(view.value.failed.mapTo(HashSet()) { it.id })
 
     fun loadMore() = controls.update { it.copy(pages = it.pages + 1) }
 
-    /** Flips a tag chip. A new filter starts again at the first page. */
-    fun toggleTag(tagId: String) = controls.update {
-        it.copy(selection = FeedRules.toggleChip(store.library.value, it.selection, tagId), pages = 1)
-    }
+    override fun toggleTagFilter(tagId: String) = editFilter { it.toggle(tagId) }
+    override fun toggleUntaggedFilter() = editFilter { it.toggleUntagged() }
+    override fun setTagMatch(match: TagMatch) = editFilter { it.copy(match = match) }
+    override fun clearTagFilter() = editFilter { it.cleared() }
 
-    fun clearTags() = controls.update { it.copy(selection = emptySet(), pages = 1) }
+    /** A new filter is a new list, so it starts again at the first page. */
+    private fun editFilter(change: (TagFilter) -> TagFilter) = controls.update {
+        it.copy(filter = change(FeedRules.inEffect(store.library.value, it.filter)), pages = 1)
+    }
 
     /** The list is at its top, so the "new videos" pill has done its job. */
     fun seenNewVideos() = results.update { it.copy(fresh = emptySet()) }

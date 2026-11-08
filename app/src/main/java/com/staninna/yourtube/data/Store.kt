@@ -93,23 +93,25 @@ class Store(
         if (lib.items.any { it.id == item.id }) lib else lib.copy(items = listOf(item.copy(addedAt = now())) + lib.items)
     }
 
-    fun unstar(itemId: String) = libraryFile.update { lib -> lib.copy(items = lib.items.filterNot { it.id == itemId }) }
+    /** Takes [itemIds] out of the library in one write. */
+    fun unstar(itemIds: Set<String>) = libraryFile.update { lib -> lib.copy(items = lib.items.filterNot { it.id in itemIds }) }
 
     /**
-     * Puts back [item] as it was before an unstar (Undo): its date and its tags that still exist. If it
-     * was starred again since, the newer star stays.
+     * Puts back [items] as they were before an unstar (Undo), in one write: their dates and their tags
+     * that still exist. An item starred again since keeps the newer star.
      */
-    fun restoreStar(item: StarredItem) = libraryFile.update { lib ->
-        if (lib.items.any { it.id == item.id }) return@update lib
-        val known = lib.tags.map { it.id }.toSet()
-        lib.copy(items = (lib.items + item.copy(tagIds = item.tagIds intersect known)).sortedByDescending { it.addedAt })
+    fun restoreStars(items: List<StarredItem>) = libraryFile.update { lib ->
+        val present = lib.items.mapTo(HashSet()) { it.id }
+        val known = lib.tags.mapTo(HashSet()) { it.id }
+        val back = items.filter { it.id !in present }.distinctBy { it.id }.map { it.copy(tagIds = it.tagIds intersect known) }
+        if (back.isEmpty()) lib else lib.copy(items = (lib.items + back).sortedByDescending { it.addedAt })
     }
 
     /**
-     * Creates a tag named [name] with the next palette color, and attaches it to [attachTo] in the same
-     * write. A name already in the pool (ignoring case) reuses that tag. Null for a blank name.
+     * Creates a tag named [name] with the next palette color, and attaches it to the items [attachTo] in
+     * the same write. A name already in the pool (ignoring case) reuses that tag. Null for a blank name.
      */
-    fun createTag(name: String, attachTo: String? = null): Tag? {
+    fun createTag(name: String, attachTo: Set<String> = emptySet()): Tag? {
         val normalized = TagNames.normalize(name) ?: return null
         val newId = UUID.randomUUID().toString()
         var tag: Tag? = null
@@ -119,21 +121,24 @@ class Store(
             tag = t
             lib.copy(
                 tags = if (t.id == newId) lib.tags + t else lib.tags,
-                items = lib.items.map { if (it.id == attachTo) it.copy(tagIds = it.tagIds + t.id) else it },
+                items = lib.items.map { if (it.id in attachTo) it.copy(tagIds = it.tagIds + t.id) else it },
             )
         }
         return tag
     }
 
-    /** Attaches [tagId] to [itemId], or detaches it. An unknown tag is never attached. */
-    fun setItemTag(itemId: String, tagId: String, attached: Boolean) = libraryFile.update { lib ->
+    /** Attaches [tagId] to every one of [itemIds], or detaches it, in one write. An unknown tag is never attached. */
+    fun setTag(itemIds: Set<String>, tagId: String, attached: Boolean) = libraryFile.update { lib ->
         if (attached && lib.tags.none { it.id == tagId }) return@update lib
         lib.copy(
             items = lib.items.map {
-                if (it.id != itemId) it else it.copy(tagIds = if (attached) it.tagIds + tagId else it.tagIds - tagId)
+                if (it.id !in itemIds) it else it.copy(tagIds = if (attached) it.tagIds + tagId else it.tagIds - tagId)
             },
         )
     }
+
+    /** Moves [tagId] to [toIndex] in the pool, whose order every list of tags follows. */
+    fun moveTag(tagId: String, toIndex: Int) = libraryFile.update { lib -> lib.copy(tags = TagOrder.move(lib.tags, tagId, toIndex)) }
 
     /** Renames a tag. A blank name, or one another tag has, changes nothing. */
     fun renameTag(tagId: String, name: String) = libraryFile.update { lib ->

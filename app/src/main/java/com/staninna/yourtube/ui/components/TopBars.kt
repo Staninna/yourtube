@@ -52,6 +52,8 @@ fun TabScaffold(
      * Without it the bar tints by adding up scroll gestures.
      */
     scrolled: ScrollableState? = null,
+    /** A bar that stands in for the usual one while set, such as Library's selection bar. */
+    contextualBar: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val scrollBehavior = if (scrolled != null) {
@@ -62,15 +64,19 @@ fun TabScaffold(
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(title, style = MaterialTheme.typography.titleLargeEmphasized) },
-                actions = {
-                    actions()
-                    SearchAction(onSearch)
-                    OverflowMenu(listOf(MenuEntry("Settings", Icons.Filled.Settings, onSettings)))
-                },
-                scrollBehavior = scrollBehavior,
-            )
+            if (contextualBar != null) {
+                contextualBar()
+            } else {
+                TopAppBar(
+                    title = { Text(title, style = MaterialTheme.typography.titleLargeEmphasized) },
+                    actions = {
+                        actions()
+                        SearchAction(onSearch)
+                        OverflowMenu(listOf(MenuEntry("Settings", Icons.Filled.Settings, onSettings)))
+                    },
+                    scrollBehavior = scrollBehavior,
+                )
+            }
         },
         // The shell's navigation bar already took the bottom inset.
         contentWindowInsets = WindowInsets.statusBars,

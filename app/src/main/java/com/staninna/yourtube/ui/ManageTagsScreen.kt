@@ -4,6 +4,18 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import com.staninna.yourtube.ui.components.dragHandle
+import com.staninna.yourtube.ui.components.rememberReorderState
+import com.staninna.yourtube.ui.components.reorderItem
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -78,7 +90,8 @@ private sealed interface TagDialog {
 
 /**
  * Settings > Library > Manage tags: every tag with how many items carry it. Tap the dot to recolor,
- * the pencil to rename, the bin to delete (after a confirm; the items stay starred).
+ * the pencil to rename, the bin to delete (after a confirm; the items stay starred). Drag the handle to
+ * reorder; TalkBack offers Move up and Move down. This order is the one every list of tags follows.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -86,6 +99,14 @@ fun ManageTagsScreen(model: LibraryModel, onBack: () -> Unit) {
     val library by model.state.collectAsStateWithLifecycle()
     val counts = remember(library) { LibraryFilter.tagCounts(library) }
     var dialog by remember { mutableStateOf<TagDialog?>(null) }
+    // The order on screen; a drag reorders it as it goes and stores the result when the finger lifts.
+    var order by remember(library.tags) { mutableStateOf(library.tags) }
+    val list = rememberLazyListState()
+    val reorder = rememberReorderState(
+        list,
+        onMove = { from, to -> order = order.toMutableList().apply { add(to, removeAt(from)) } },
+        onDrop = { key, to -> model.moveTag(key as String, to) },
+    )
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     BackHandler(onBack = onBack)
 
@@ -104,21 +125,38 @@ fun ManageTagsScreen(model: LibraryModel, onBack: () -> Unit) {
             )
             return@Scaffold
         }
-        LazyColumn(
-            Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
-        ) {
-            itemsIndexed(library.tags, key = { _, tag -> tag.id }) { index, tag ->
-                val count = counts[tag.id] ?: 0
-                TagRow(
-                    tag,
-                    count,
-                    ListItemDefaults.segmentedShapes(index, library.tags.size),
-                    onRecolor = { dialog = TagDialog.Recolor(tag) },
-                    onRename = { dialog = TagDialog.Rename(tag) },
-                    onDelete = { dialog = TagDialog.Delete(tag, count) },
-                )
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            Text(
+                "Drag a tag by its handle to reorder. Library, Feeds and the tag sheets list tags in this order.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp),
+            )
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                state = list,
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+            ) {
+                itemsIndexed(order, key = { _, tag -> tag.id }) { index, tag ->
+                    val count = counts[tag.id] ?: 0
+                    val dragged = reorder.dragging == tag.id
+                    val shapes = ListItemDefaults.segmentedShapes(index, order.size)
+                    TagRow(
+                        tag,
+                        count,
+                        shapes,
+                        onRecolor = { dialog = TagDialog.Recolor(tag) },
+                        onRename = { dialog = TagDialog.Rename(tag) },
+                        onDelete = { dialog = TagDialog.Delete(tag, count) },
+                        moves = listOfNotNull(
+                            if (index > 0) CustomAccessibilityAction("Move up") { model.moveTag(tag.id, index - 1); true } else null,
+                            if (index < order.lastIndex) CustomAccessibilityAction("Move down") { model.moveTag(tag.id, index + 1); true } else null,
+                        ),
+                        handle = Modifier.dragHandle(reorder, tag.id),
+                        modifier = (if (dragged) Modifier else Modifier.animateItem()).reorderItem(reorder, tag.id, shapes.shape),
+                    )
+                }
             }
         }
     }
@@ -141,9 +179,13 @@ private fun TagRow(
     onRecolor: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    moves: List<CustomAccessibilityAction>,
+    handle: Modifier,
+    modifier: Modifier,
 ) {
     SegmentedListItem(
         shapes = shapes,
+        modifier = modifier.semantics { customActions = moves },
         leadingContent = {
             val describe = "Color of ${tag.name}: ${TagPalette.nameOf(tag.color)}. Change"
             IconButton(onClick = onRecolor, modifier = Modifier.semantics { contentDescription = describe }) {
@@ -155,6 +197,10 @@ private fun TagRow(
             Row {
                 IconButton(onClick = onRename) { Icon(Icons.Outlined.Edit, contentDescription = "Rename ${tag.name}") }
                 IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, contentDescription = "Delete ${tag.name}") }
+                // TalkBack moves the row with its Move up and Move down actions instead.
+                Box(handle.size(48.dp), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.DragHandle, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         },
     ) { Text(tag.name) }
@@ -196,7 +242,10 @@ private fun RenameDialog(tag: Tag, tags: List<Tag>, onDismiss: () -> Unit, onSav
     )
 }
 
-/** The palette as 48 dp swatches; TalkBack reads each as a radio button with its color's name. */
+/**
+ * The palette as a grid of 40 dp swatches, each in a 48 dp touch target, as many to a row as fit. It
+ * scrolls when the dialog is short (landscape). TalkBack reads each as a radio button with its name.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ColorDialog(tag: Tag, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
@@ -205,9 +254,9 @@ private fun ColorDialog(tag: Tag, onDismiss: () -> Unit, onPick: (Int) -> Unit) 
         title = { Text("Color for \"${tag.name}\"") },
         text = {
             FlowRow(
-                Modifier.selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 TagPalette.colors.forEach { color ->
                     val selected = color.argb == tag.color
@@ -215,7 +264,6 @@ private fun ColorDialog(tag: Tag, onDismiss: () -> Unit, onPick: (Int) -> Unit) 
                         Modifier
                             .size(48.dp)
                             .clip(CircleShape)
-                            .background(Color(color.argb))
                             .selectable(selected = selected, role = Role.RadioButton) {
                                 onPick(color.argb)
                                 onDismiss()
@@ -223,7 +271,11 @@ private fun ColorDialog(tag: Tag, onDismiss: () -> Unit, onPick: (Int) -> Unit) 
                             .semantics { contentDescription = color.name },
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (selected) Icon(Icons.Filled.Check, contentDescription = null, tint = Color.Black.copy(alpha = 0.8f))
+                        Box(Modifier.size(40.dp).clip(CircleShape).background(Color(color.argb)), contentAlignment = Alignment.Center) {
+                            // Black on a light swatch, white on a deep one, so the check always shows.
+                            val check = if (Color(color.argb).luminance() > 0.3f) Color.Black.copy(alpha = 0.8f) else Color.White
+                            if (selected) Icon(Icons.Filled.Check, contentDescription = null, tint = check)
+                        }
                     }
                 }
             }

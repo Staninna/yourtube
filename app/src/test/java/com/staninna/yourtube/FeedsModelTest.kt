@@ -93,7 +93,7 @@ class FeedsModelTest {
         val model = model("A", "B")
         runCurrent()
         assertEquals(2, model.view.value.videos.size)
-        store.unstar("B")
+        store.unstar(setOf("B"))
         runCurrent()
         assertTrue(model.view.value.videos.isEmpty())
         assertFalse("the cache drops it too", "B" in store.feeds.value)
@@ -201,16 +201,30 @@ class FeedsModelTest {
     @Test fun loadMoreRevealsAnotherPageAndChipsStartOver() = runTest {
         answer("A", videos("A", 120))
         val model = model("A")
-        val music = store.createTag("Music", attachTo = "A")!!
+        val music = store.createTag("Music", attachTo = setOf("A"))!!
         runCurrent()
         assertEquals(50, model.view.value.videos.size)
         model.loadMore()
         assertEquals(100, model.view.value.videos.size)
-        model.toggleTag(music.id)
-        assertEquals(setOf(music.id), model.view.value.selected)
+        model.toggleTagFilter(music.id)
+        assertEquals(setOf(music.id), model.view.value.tags.filter.tags)
         assertEquals(50, model.view.value.videos.size)
-        model.clearTags()
-        assertEquals(emptySet<String>(), model.view.value.selected)
+        model.clearTagFilter()
+        assertEquals(emptySet<String>(), model.view.value.tags.filter.tags)
+    }
+
+    @Test fun aChoiceThatDroppedOutStaysOutWhenAChannelBringsItBack() = runTest {
+        answer("A", videos("A", 2))
+        answer("C", videos("C", 2))
+        val model = model("A")
+        runCurrent()
+        model.toggleUntaggedFilter()
+        assertTrue(model.view.value.tags.filter.untagged)
+        store.createTag("Music", attachTo = setOf("A"))
+        assertFalse(model.view.value.tags.filter.untagged)
+        store.star(channel("C"))
+        runCurrent()
+        assertFalse("Untagged does not come back", model.view.value.tags.filter.untagged)
     }
 
     @Test fun revealedPagesSurviveARefresh() = runTest {
@@ -268,15 +282,15 @@ class FeedsModelTest {
         answer("A", videos("A", 1, newest = 100), videos("A", 2, newest = 300, first = 10))
         answer("B", videos("B", 1, newest = 100), videos("B", 3, newest = 300, first = 10))
         val model = model("A", "B")
-        val music = store.createTag("Music", attachTo = "A")!!
+        val music = store.createTag("Music", attachTo = setOf("A"))!!
         runCurrent()
         gate = CompletableDeferred()
         model.refresh()
-        model.toggleTag(music.id)
+        model.toggleTagFilter(music.id)
         gate!!.complete(Unit)
         runCurrent()
         assertEquals("A's two new ones; B's are behind the chip", 2, model.view.value.newVideos)
-        model.clearTags()
+        model.clearTagFilter()
         assertEquals(5, model.view.value.newVideos)
     }
 

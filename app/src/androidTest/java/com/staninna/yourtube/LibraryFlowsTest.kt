@@ -112,7 +112,10 @@ class LibraryFlowsTest {
         tab("Library").performClick()
         compose.onNodeWithText("Videos").performClick()
         compose.onNodeWithText("An untagged video").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Tags: all").performClick()
         compose.onNodeWithText("Music").performClick()
+        compose.onNodeWithText("Done").performClick()
+        compose.onNodeWithContentDescription("Tags: Music").assertIsDisplayed()
         // The row's second line; the title alone also shows in the now-playing bar.
         compose.onNodeWithText("Rick Astley · Music").assertIsDisplayed()
         compose.onAllNodesWithText("An untagged video").assertCountEquals(0)
@@ -143,19 +146,25 @@ class LibraryFlowsTest {
         compose.waitUntil(5_000) { store.library.value.items.isNotEmpty() }
     }
 
-    @Test fun longPressOnALibraryRowTagsIt() {
+    @Test fun oneSelectedRowIsTaggedInItsOwnSheet() {
         store.star(video(videoId, "A saved video"))
         val talks = store.createTag("Talks")!!
         setContent()
         tab("Library").performClick()
         compose.onNodeWithText("Videos").performClick()
         compose.onNodeWithText("A saved video").performTouchInput { longClick() }
+        compose.onNodeWithText("1 selected").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Tag selected").performClick()
         compose.onNodeWithText("In your library").assertIsDisplayed()
         compose.onNodeWithText("Talks").performClick()
         compose.waitUntil(5_000) { talks.id in store.library.value.items.single().tagIds }
         compose.onNodeWithText("Done").performClick()
         compose.waitUntil(5_000) { vm.library.tagSheet.value == null }
         compose.onNodeWithText("Someone · Talks").assertIsDisplayed()
+        // Back leaves selection mode before it leaves Library.
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.onAllNodesWithText("1 selected").assertCountEquals(0)
+        compose.onNodeWithText("A saved video").assertIsDisplayed()
     }
 
     @Test fun segmentsSwitchBetweenTypesWithTheirOwnEmptyStates() {
@@ -214,7 +223,7 @@ class LibraryFlowsTest {
 
     @Test fun manageTagsRenamesRecolorsAndDeletes() {
         store.star(video(videoId, "A saved video"))
-        val music = store.createTag("Music", attachTo = videoId)!!
+        val music = store.createTag("Music", attachTo = setOf(videoId))!!
         setContent()
         compose.onNodeWithContentDescription("More options").performClick()
         compose.onNodeWithText("Settings").performClick()

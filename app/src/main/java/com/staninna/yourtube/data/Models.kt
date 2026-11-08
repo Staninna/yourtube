@@ -18,7 +18,11 @@ data class TagColor(val name: String, val argb: Int)
 
 /** The colors tags take in turn when created, and the choices for recoloring one. */
 object TagPalette {
-    /** Material tonal reds, blues, greens and ambers, legible as dots on light and dark surfaces. */
+    /**
+     * 32 mid tones, each at least 1.6:1 against the light surface and 2.7:1 against the dark one, so a
+     * dot reads on both. The first eight are the original palette; stored tags keep their argb whatever
+     * the palette holds. No two are closer than Red and Pink (0.065 apart in OKLab).
+     */
     val colors: List<TagColor> = listOf(
         TagColor("Red", 0xFFE57373.toInt()),
         TagColor("Blue", 0xFF64B5F6.toInt()),
@@ -28,6 +32,30 @@ object TagPalette {
         TagColor("Teal", 0xFF4DB6AC.toInt()),
         TagColor("Pink", 0xFFF06292.toInt()),
         TagColor("Brown", 0xFFA1887F.toInt()),
+        TagColor("Crimson", 0xFFC62828.toInt()),
+        TagColor("Royal blue", 0xFF1C7ED6.toInt()),
+        TagColor("Forest", 0xFF2E7D32.toInt()),
+        TagColor("Mustard", 0xFFC49A0C.toInt()),
+        TagColor("Violet", 0xFF8A4FC0.toInt()),
+        TagColor("Petrol", 0xFF00838F.toInt()),
+        TagColor("Magenta", 0xFFC2185B.toInt()),
+        TagColor("Bronze", 0xFF8D6420.toInt()),
+        TagColor("Tangerine", 0xFFFF7A3D.toInt()),
+        TagColor("Indigo", 0xFF4A5BD0.toInt()),
+        TagColor("Grass", 0xFF66AE2E.toInt()),
+        TagColor("Lime", 0xFFB4C82A.toInt()),
+        TagColor("Orchid", 0xFFE86AE0.toInt()),
+        TagColor("Jade", 0xFF3E8E68.toInt()),
+        TagColor("Mauve", 0xFFA0576F.toInt()),
+        TagColor("Graphite", 0xFF737373.toInt()),
+        TagColor("Rust", 0xFFC4562F.toInt()),
+        TagColor("Periwinkle", 0xFF8F8FF0.toInt()),
+        TagColor("Mint", 0xFF3DDC97.toInt()),
+        TagColor("Olive", 0xFF7D7F1F.toInt()),
+        TagColor("Lilac", 0xFFE1A0F0.toInt()),
+        TagColor("Steel", 0xFF5E8FC4.toInt()),
+        TagColor("Peach", 0xFFF7A597.toInt()),
+        TagColor("Silver", 0xFFBDBDBD.toInt()),
     )
 
     /** The color the tag created after [existing] tags gets. */
@@ -50,7 +78,7 @@ data class StarredItem(
     /** The channel's UC id, which builds its RSS feed; null when the page did not yield one. */
     val channelId: String? = null,
     val tagIds: Set<String> = emptySet(),
-    /** Set by `Store.star` when the item is starred; the library is newest first by it. */
+    /** Set by `Store.star` when the item is starred; the library is stored newest first by it. */
     val addedAt: Long = 0,
 ) {
     /**
@@ -199,4 +227,16 @@ data class Settings(
     val showNewIdentity: Boolean = true,
     /** The hourly check of subscribed channels that notifies about new uploads. Off until asked for. */
     val newVideoNotifications: Boolean = false,
+    /** Library's order, the same for every segment. */
+    val librarySort: LibrarySort = LibrarySort.RECENT,
 )
+
+/** How Library orders a segment. Stored by name. */
+@Serializable
+enum class LibrarySort {
+    /** Newest starred first. */
+    @SerialName("recent") RECENT,
+
+    /** By title, A to Z in the device's language, ignoring case; equal titles newest first. */
+    @SerialName("name") NAME,
+}

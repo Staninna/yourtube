@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.staninna.yourtube.LibraryModel
 import com.staninna.yourtube.data.StarredItem
+import com.staninna.yourtube.data.Tag
 import com.staninna.yourtube.data.TagNames
 import com.staninna.yourtube.data.TagSheet
 import com.staninna.yourtube.ui.components.ChannelAvatar
@@ -63,7 +64,7 @@ import kotlinx.coroutines.launch
 
 /**
  * The tag sheet, over everything while the view model has one open: opened by the star in Watch and
- * by long-pressing a Library row. Tags apply as they are tapped, so dismissing it any way keeps the
+ * by Tag in Library's selection mode with one row selected. Tags apply as they are tapped, so dismissing it any way keeps the
  * star and every change. Remove from library takes the item out, with Undo.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -110,7 +111,7 @@ private fun TagSheetContent(sheet: TagSheet, library: LibraryModel, onDone: () -
                 }
             }
         }
-        NewTagField(sheet, onCreate = { library.createTag(item.id, it) })
+        NewTagField(sheet.tags, onCreate = { library.createTag(item.id, it) })
         sheet.channel?.let { channel ->
             HorizontalDivider(Modifier.padding(top = 24.dp))
             SectionLabel("Channel")
@@ -165,18 +166,18 @@ private fun SectionLabel(text: String) {
 }
 
 /**
- * Names a new tag and attaches it. A name the pool already has attaches that tag instead, and the
- * field says so before the user commits.
+ * Names a new tag and attaches it. A name the pool ([tags]) already has attaches that tag instead, and
+ * the field says so before the user commits.
  */
 @Composable
-private fun NewTagField(sheet: TagSheet, onCreate: (String) -> Unit) {
+internal fun NewTagField(tags: List<Tag>, onCreate: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
     val valid = TagNames.normalize(name) != null
     val create = {
         if (valid) onCreate(name)
         name = ""
     }
-    val existing = TagNames.clash(name, sheet.tags)
+    val existing = TagNames.clash(name, tags)
     OutlinedTextField(
         value = name,
         onValueChange = { name = it.take(TagNames.MAX_LENGTH) },
