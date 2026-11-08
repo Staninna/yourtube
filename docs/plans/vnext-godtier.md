@@ -221,8 +221,33 @@ grace period (10 min), then stops. It is only ever started while the Activity is
 - Deep links (`youtube.com/watch`, `youtu.be`, `/@handle`, `/channel`) and an `ACTION_SEND` share
   target open in the app.
 - Accessibility: state descriptions, content descriptions, 48 dp targets, TalkBack pass.
-- Settings: Playback (PiP mode, background audio), Feed (page size, hide shorts), Appearance (dynamic
-  color), Library (Manage tags, import/export), Privacy (show reroll button), About (Diagnostics).
+- Settings: Playback (PiP mode, background audio), Content (ad blocking layers, SponsorBlock
+  categories and actions, remove all Shorts), Feed (page size), Appearance (dynamic color), Library
+  (Manage tags, import/export), Privacy (show reroll button), About (Diagnostics).
+
+### Content filtering: ads, SponsorBlock, Shorts
+
+Requested after revision 3. All three are configurable in Settings > Content.
+
+- **Ad blocking**, in layers, each switchable:
+  - *Player ads*: prune ad data before the player sees it, the way uBlock Origin's `json-prune`
+    scriptlets do: strip `adPlacements`, `adSlots`, `playerAds` from `ytInitialPlayerResponse` and from
+    `/youtubei/v1/player` responses (patched `JSON.parse` / `fetch` / XHR in the early script).
+  - *Network*: `shouldInterceptRequest` returns empty responses for ad and ad-tracking hosts and paths
+    (doubleclick, googleadservices, `pagead`, `/api/stats/ads`, `/ptracking`, `/pagead/`), from one
+    maintained blocklist file.
+  - *Display ads*: the existing CSS hiding (promoted videos, ad slots, companion ads).
+  - *Safety net*: if an ad still plays (`.ad-showing` on the player), mute it, jump to its end, and
+    click skip; count it in Diagnostics so leaks are visible.
+- **SponsorBlock**: segments fetched natively per video with the privacy-preserving hash-prefix API
+  (`/api/skipSegments/<first 4 hex of sha256(videoId)>`, so the server never learns the exact video),
+  cached per video. Per-category action (skip, mute, show only, off) for sponsor, self-promo,
+  interaction reminder, intro, outro, preview, filler, non-music section; defaults: sponsor and
+  self-promo skip, the rest show only. A skip shows a native snackbar with Undo. Segments go to the
+  page over the bridge; the main script applies them on `timeupdate`. Server URL configurable.
+- **Remove all Shorts** (one switch): hides Shorts shelves, tabs, links and results in the WebView,
+  rewrites `/shorts/<id>` navigations to `/watch?v=<id>`, and filters Shorts out of Feeds (RSS entries
+  whose link is `/shorts/`). Replaces the narrower "hide shorts" setting.
 
 ### Import / export (onboarding)
 
@@ -247,12 +272,14 @@ its own commit.
 3. **Design system + shell**: theme, components, state components, a11y baseline, YouTube chrome
    hiding, search action, progress/error states, now-playing bar slot, Settings skeleton, Watch top bar.
 4. **Library + tags + star + history + import/export**.
-5. **Feeds**. → **Release 1** (`v0.2.0`).
-6. **Background audio** (media3) + fullscreen polish + D4 non-PiP rows.
-7. **PiP** + D4 PiP rows.
-8. **Anonymization extras**: fingerprint script, UA metadata, consent/bot-check recovery, pref
+5. **Feeds**.
+6. **Content filtering**: ad blocking layers, SponsorBlock, remove all Shorts, Settings > Content.
+   → **Release 1** (`v0.2.0`).
+7. **Background audio** (media3) + fullscreen polish + D4 non-PiP rows.
+8. **PiP** + D4 PiP rows.
+9. **Anonymization extras**: fingerprint script, UA metadata, consent/bot-check recovery, pref
    carry-over, reroll button, backup rules.
-9. **QA pass** → **Release 2** (`v0.3.0`).
+10. **QA pass** → **Release 2** (`v0.3.0`).
 
 **Cut order** if something slips: canvas/WebGL/audio noise; avatar backfill (keep placeholders);
 PiP fullscreen-only/manual modes; tag recolor; the 250 page size; Diagnostics UI (keep logging);
