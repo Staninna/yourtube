@@ -61,6 +61,8 @@ dependencies {
     implementation("androidx.webkit:webkit:1.18.0")
     implementation("androidx.media3:media3-session:1.11.1")
     implementation("androidx.media3:media3-common:1.11.1")
+    // The hourly new-video check: JobScheduler underneath, no Play services needed (GrapheneOS).
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     // --- local JVM unit tests (./gradlew test) ---
@@ -74,5 +76,6 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test.ext:junit-ktx:1.2.1")
     androidTestImplementation("androidx.test:core-ktx:1.6.1")
+    androidTestImplementation("androidx.test:rules:1.6.1")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

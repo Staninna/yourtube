@@ -41,6 +41,9 @@ class FeedsModel(
     private val controls = MutableStateFlow(FeedControls())
     private val gate = Semaphore(FeedRules.CONCURRENCY)
 
+    /** Channels whose fetch ended since the cache was last written. Touched on [scope] only. */
+    private val answered = HashSet<String>()
+
     val view: StateFlow<FeedView> = combine(store.library, results, controls, store.settings) { lib, res, ctl, settings ->
         FeedRules.view(lib, res, ctl, settings.feedPageSize, settings.removeShorts)
     }.stateIn(
@@ -55,13 +58,19 @@ class FeedsModel(
     }.stateIn(scope, SharingStarted.Eagerly, FeedRules.latestUploads(results.value, store.settings.value.removeShorts))
 
     init {
+        // Lists the background new-video check put in the cache show here at once.
+        scope.launch {
+            store.feeds.collect { cache ->
+                results.update { it.adopt(cache, FeedRules.subscriptions(store.library.value), Store.FEED_CACHE_PER_CHANNEL) }
+            }
+        }
         // New subscriptions, the first batch included, are fetched as they appear; gone ones leave.
         scope.launch {
             var known = emptySet<String>()
             store.library.map(FeedRules::subscriptions).distinctUntilChanged().collect { subs ->
                 if (!subs.containsAll(known)) {
                     results.update { it.keep(subs) }
-                    store.cacheFeeds(results.value.cache())
+                    store.updateFeeds { cache -> cache.filterKeys { it in subs } }
                 }
                 fetch(subs - known)
                 known = subs
@@ -113,8 +122,14 @@ class FeedsModel(
         } finally {
             val subscribed = channelId in FeedRules.subscriptions(store.library.value)
             results.update { if (subscribed) it.finish(channelId, outcome) else it.abandon(channelId) }
-            // One write when the last fetch in flight ends, not one per channel: the file holds them all.
-            if (results.value.loading.isEmpty()) store.cacheFeeds(results.value.cache())
+            if (subscribed) answered += channelId
+            // One write when the last fetch in flight ends, not one per channel. It merges just the
+            // channels that answered, so a list the background check cached meanwhile stays.
+            if (results.value.loading.isEmpty()) {
+                val lists = results.value.cache().filterKeys { it in answered }
+                answered.clear()
+                store.updateFeeds { cache -> cache + lists }
+            }
         }
         when (val o = outcome) {
             is ChannelFetch.Ok -> if (o.source == FeedSource.PAGE) Diagnostics.count("feed.rss.fallback", channelId)

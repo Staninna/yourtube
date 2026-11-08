@@ -59,6 +59,16 @@ internal class StoreFile<T>(
         save()
     }
 
+    /** As [update], but writes nothing when [transform] returns what was there. */
+    fun updateIfChanged(transform: (T) -> T) {
+        val before = _state.value
+        _state.update(transform)
+        if (_state.value != before) {
+            dirty.set(true)
+            save()
+        }
+    }
+
     /** Applies [transform] atomically; the file is written by the next [save]. */
     fun updateInMemory(transform: (T) -> T) {
         _state.update(transform)

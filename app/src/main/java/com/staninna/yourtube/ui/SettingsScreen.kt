@@ -119,7 +119,7 @@ fun SettingsScreen(vm: MainViewModel, snackbars: Snackbars, backup: BackupAction
             ContentSettings(settings, vm)
             Section(
                 "Feed",
-                listOf { shapes ->
+                listOf<SettingRow> { shapes ->
                     ChoiceRow(
                         "Videos per page",
                         "Feeds shows this many at first, and Load more adds as many again",
@@ -128,7 +128,7 @@ fun SettingsScreen(vm: MainViewModel, snackbars: Snackbars, backup: BackupAction
                         onSelect = { vm.feeds.setPageSize(FeedPageSize.entries[it]) },
                         shapes = shapes,
                     )
-                },
+                } + newVideoRows(settings, vm),
             )
             Section(
                 "Appearance",

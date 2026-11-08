@@ -51,6 +51,18 @@ data class FeedResults(
     /** Only [subscriptions] stay; an unsubscribed channel's videos leave with it. */
     fun keep(subscriptions: Set<String>): FeedResults = copy(channels = channels.filterKeys { it in subscriptions })
 
+    /**
+     * The feed cache as someone else wrote it (the background new-video check): a subscribed channel
+     * whose cached list differs from ours, and that is not being fetched, takes it as if fetched.
+     * Our own writes match what we hold, so they change nothing.
+     */
+    fun adopt(cache: Map<String, List<FeedVideo>>, subscriptions: Set<String>, cap: Int): FeedResults =
+        cache.entries.fold(this) { acc, (channelId, videos) ->
+            val ours = acc.channels[channelId]?.videos?.take(cap)
+            if (channelId !in subscriptions || channelId in acc.loading || ours == videos) acc
+            else acc.finish(channelId, ChannelFetch.Ok(videos, FeedSource.RSS))
+        }
+
     /** Every channel's last uploads, for the store's cache. */
     fun cache(): Map<String, List<FeedVideo>> = channels.mapNotNull { (id, feed) -> feed.videos?.let { id to it } }.toMap()
 

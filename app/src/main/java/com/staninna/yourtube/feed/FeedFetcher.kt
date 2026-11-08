@@ -65,6 +65,13 @@ class YouTubeFeedFetcher(
     }
 
     /**
+     * RSS alone, as the background new-video check reads it: two tries under [RetryPolicy.RSS], no
+     * pages, no lengths. Null when the feed did not answer with a feed.
+     */
+    suspend fun rss(channelId: String): List<FeedVideo>? =
+        (RetryPolicy.RSS.run { get(RssFeed.url(channelId)) } as? HttpResult.Ok)?.let { ok -> offMain { RssFeed.parse(ok.body, channelId) } }
+
+    /**
      * [videos] from RSS with their lengths: carried from [known], then read from the videos page and,
      * for what it lacks, the live page, one try each (see [FeedLengths.worthReading]). No connection or
      * a 5xx leaves the rest without a length, so the next fetch asks again. A 4xx, or a page that does

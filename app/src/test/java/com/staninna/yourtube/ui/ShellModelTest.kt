@@ -120,6 +120,8 @@ class ShellModelTest {
         assertEquals(SwitchState(checked = true, enabled = true), SettingsModel.dynamicColor(Settings(dynamicColor = true), true))
         assertEquals(SwitchState(checked = false, enabled = true), SettingsModel.dynamicColor(Settings(dynamicColor = false), true))
         assertEquals(SwitchState(checked = false, enabled = false), SettingsModel.dynamicColor(Settings(dynamicColor = true), false))
+        assertEquals(SwitchState(checked = true, enabled = true), SettingsModel.newVideos(Settings(newVideoNotifications = true), allowed = true))
+        assertEquals("blocked by Android reads as off", SwitchState(checked = false, enabled = true), SettingsModel.newVideos(Settings(newVideoNotifications = true), allowed = false))
     }
 
     @Test fun diagnosticsListMostFrequentFirstUnderOneLabel() {

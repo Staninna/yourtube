@@ -299,6 +299,9 @@ class MainViewModel(
     fun setRemoveShorts(enabled: Boolean) = store.updateSettings { it.copy(removeShorts = enabled) }
     fun setDynamicColor(enabled: Boolean) = store.updateSettings { it.copy(dynamicColor = enabled) }
     fun setShowNewIdentity(shown: Boolean) = store.updateSettings { it.copy(showNewIdentity = shown) }
+
+    /** Turning it on starts the new-video check over, so the backlog never notifies. */
+    fun setNewVideoNotifications(on: Boolean) = store.setNewVideoNotifications(on)
     fun setAdLayer(layer: AdLayer, on: Boolean) = store.updateSettings { it.copy(adBlocking = it.adBlocking.with(layer, on)) }
     fun setSponsorBlock(enabled: Boolean) = store.updateSettings { it.copy(sponsorBlock = it.sponsorBlock.copy(enabled = enabled)) }
     fun setSegmentAction(category: SegmentCategory, action: SegmentAction) =

@@ -197,4 +197,6 @@ data class Settings(
     val pip: PipMode = PipMode.AUTO,
     /** Whether Watch's top bar shows the new-identity (mask) button. */
     val showNewIdentity: Boolean = true,
+    /** The hourly check of subscribed channels that notifies about new uploads. Off until asked for. */
+    val newVideoNotifications: Boolean = false,
 )

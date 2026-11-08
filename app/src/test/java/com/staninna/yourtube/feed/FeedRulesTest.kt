@@ -205,4 +205,15 @@ class FeedRulesTest {
         assertEquals(mapOf("A" to 90L, "C" to 60L), FeedRules.latestUploads(res, removeShorts = false))
         assertEquals(mapOf("A" to 50L), FeedRules.latestUploads(res, removeShorts = true))
     }
+
+    @Test fun aCacheWrittenByTheBackgroundCheckIsAdoptedUnlessFetching() {
+        val start = FeedResults().finish("A", ok(video("a1", "A", 10)))
+        val outside = mapOf("A" to listOf(video("a2", "A", 20), video("a1", "A", 10)), "Gone" to listOf(video("g", "Gone", 5)))
+        val adopted = start.adopt(outside, setOf("A"), cap = 30)
+        assertEquals(listOf("a2", "a1"), adopted.channels.getValue("A").videos!!.map { it.videoId })
+        assertEquals("a new upload is fresh, as from a refresh", setOf("a2"), adopted.fresh)
+        assertNull("an unsubscribed channel stays out", adopted.channels["Gone"])
+        assertEquals("our own cache changes nothing", start, start.adopt(start.cache(), setOf("A"), cap = 30))
+        assertEquals("a channel being fetched waits for its own answer", start.start(setOf("A")), start.start(setOf("A")).adopt(outside, setOf("A"), 30))
+    }
 }

@@ -26,6 +26,17 @@ object SettingsModel {
         }
     }
 
+    /** New video notifications shows as off while Android blocks the app's notifications, whatever is stored. */
+    fun newVideos(settings: Settings, allowed: Boolean) = SwitchState(settings.newVideoNotifications && allowed, enabled = true)
+
+    /** The New video notifications row's summary; [blocked] when Android keeps them from showing. */
+    fun newVideoSummary(blocked: Boolean): String =
+        if (blocked) {
+            "Android keeps these notifications from showing. Allow them below, then turn this on."
+        } else {
+            "About once an hour, checks your subscriptions and tells you about new uploads"
+        }
+
     /** The Manage tags row's summary. */
     fun tagCount(count: Int): String = if (count == 0) "No tags yet" else plural(count, "tag", "tags")
 

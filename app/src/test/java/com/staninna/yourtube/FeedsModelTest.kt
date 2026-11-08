@@ -170,6 +170,27 @@ class FeedsModelTest {
         assertEquals(4, store.feeds.value.getValue("B").size)
     }
 
+    @Test fun listsTheBackgroundCheckCachedShowAtOnce() = runTest {
+        answer("A", videos("A", 1, newest = 100))
+        val model = model("A")
+        runCurrent()
+        store.updateFeeds { it + ("A" to listOf(video("A", 9, at = 500), video("A", 0, at = 100))) }
+        runCurrent()
+        assertEquals(listOf("A%010d".format(9), "A%010d".format(0)), model.view.value.videos.map { it.videoId })
+    }
+
+    @Test fun aRefreshWritesOnlyItsChannelsAndKeepsWhatAnotherWriterCached() = runTest {
+        answer("A", videos("A", 1), videos("A", 2))
+        val model = model("A")
+        runCurrent()
+        // A channel this model does not hold, cached by someone else.
+        store.updateFeeds { it + ("Z" to listOf(video("Z", 0, at = 5))) }
+        model.refresh()
+        runCurrent()
+        assertEquals(setOf("A", "Z"), store.feeds.value.keys)
+        assertEquals(2, store.feeds.value.getValue("A").size)
+    }
+
     @Test fun libraryGetsEachChannelsLatestUpload() = runTest {
         answer("A", videos("A", 2, newest = 500))
         val model = model("A", "B")

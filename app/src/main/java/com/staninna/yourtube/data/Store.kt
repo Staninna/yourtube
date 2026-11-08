@@ -41,7 +41,8 @@ class Store(
         dir, "feeds.json", MapSerializer(String.serializer(), ListSerializer(FeedVideo.serializer())), emptyMap(), scope,
     )
     private val playerFile = StoreFile(dir, "player.json", PlayerPrefs.serializer(), PlayerPrefs(), scope)
-    private val files = listOf(libraryFile, historyFile, settingsFile, channelsFile, feedsFile, playerFile)
+    private val notifyFile = StoreFile(dir, "notify.json", NotifyState.serializer(), NotifyState(), scope)
+    private val files = listOf(libraryFile, historyFile, settingsFile, channelsFile, feedsFile, playerFile, notifyFile)
 
     val library: StateFlow<Library> = libraryFile.state
 
@@ -61,10 +62,13 @@ class Store(
     /** The last identity's player choices, for the next identity to start with. The library export leaves it out. */
     val playerPrefs: StateFlow<PlayerPrefs> = playerFile.state
 
+    /** What the new-video check has seen per channel. Backups leave it out. */
+    val notify: StateFlow<NotifyState> = notifyFile.state
+
     /** Files that could not be read at startup; each was kept as `<name>.corrupt`. */
     val corruptFiles: Set<String> = files.filter { it.loadResult == LoadResult.CORRUPT }.map { it.name }.toSet()
 
-    // Only the user's own data earns a notice; the channel and feed caches refill themselves.
+    // Only the user's own data earns a notice; the caches and the new-video state refill themselves.
     private val _corruptNotice = MutableStateFlow(
         listOf(libraryFile, historyFile, settingsFile).map { it.name }.filter { it in corruptFiles }.toSet().takeIf { it.isNotEmpty() },
     )
@@ -268,10 +272,43 @@ class Store(
     // --- feed cache ---
 
     /** Replaces the feed cache with [feeds], at most [FEED_CACHE_PER_CHANNEL] videos per channel. */
-    fun cacheFeeds(feeds: Map<String, List<FeedVideo>>) {
-        val capped = feeds.mapValues { (_, videos) -> videos.take(FEED_CACHE_PER_CHANNEL) }
-        if (capped != feedsFile.value) feedsFile.update { capped }
+    fun cacheFeeds(feeds: Map<String, List<FeedVideo>>) = updateFeeds { feeds }
+
+    /**
+     * Changes the feed cache in one atomic step, so Feeds and the background check, which each write
+     * only their own channels, never undo each other. [transform] may run more than once. Lists are
+     * capped at [FEED_CACHE_PER_CHANNEL]; an unchanged cache is not written.
+     */
+    fun updateFeeds(transform: (Map<String, List<FeedVideo>>) -> Map<String, List<FeedVideo>>) {
+        feedsFile.updateIfChanged { cache -> transform(cache).mapValues { (_, videos) -> videos.take(FEED_CACHE_PER_CHANNEL) } }
     }
+
+    // --- new-video notifications ---
+
+    /**
+     * Turns the new-video check on or off. Turning it on starts its state over: the next check seeds
+     * every channel, so the backlog never notifies.
+     */
+    fun setNewVideoNotifications(on: Boolean) {
+        if (on) restartNotify()
+        settingsFile.update { it.copy(newVideoNotifications = on) }
+    }
+
+    /** Forgets what the new-video check has seen, so its next run seeds every channel again. */
+    fun restartNotify() = notifyFile.update { NotifyState(since = now()) }
+
+    /**
+     * Stores [next], a check's result computed from [expected], unless the state moved on meanwhile
+     * (turned on again, or restarted). Returns whether it was stored.
+     */
+    fun replaceNotify(expected: NotifyState, next: NotifyState): Boolean {
+        var applied = false
+        notifyFile.update { current -> (if (current == expected) next else current).also { applied = current == expected } }
+        return applied
+    }
+
+    /** Waits until every write queued so far is on disk, without touching the playback debounce. */
+    suspend fun awaitWrites() = scope.launch {}.join()
 
     companion object {
         const val HISTORY_CAP = 2000
