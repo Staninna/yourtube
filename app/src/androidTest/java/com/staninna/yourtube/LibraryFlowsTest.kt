@@ -1,8 +1,11 @@
 package com.staninna.yourtube
 
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
@@ -115,7 +118,7 @@ class LibraryFlowsTest {
         compose.onAllNodesWithText("An untagged video").assertCountEquals(0)
     }
 
-    @Test fun dismissingTheSheetKeepsTheStarAndStarringAgainUnstarsWithUndo() {
+    @Test fun theFilledStarOpensTheSheetWhoseRemoveCanBeUndone() {
         setContent()
         showVideoInWatch()
         compose.onNodeWithContentDescription("Star").performClick()
@@ -125,9 +128,17 @@ class LibraryFlowsTest {
         compose.waitUntil(5_000) { vm.library.tagSheet.value == null }
         assertEquals(listOf(videoId), store.library.value.items.map { it.id })
 
-        compose.onNodeWithContentDescription("Star").performClick()
+        val star = compose.onNodeWithContentDescription("Star")
+        star.assert(SemanticsMatcher("offers Edit tags") { it.config.getOrNull(SemanticsActions.OnClick)?.label == "Edit tags" })
+        star.performClick()
+        compose.onNodeWithText("In your library").assertIsDisplayed()
+        assertEquals("the filled star edits, it does not unstar", listOf(videoId), store.library.value.items.map { it.id })
+
+        compose.onNodeWithText("Remove from library").performClick()
         compose.waitUntil(5_000) { store.library.value.items.isEmpty() }
+        compose.waitUntil(5_000) { vm.library.tagSheet.value == null }
         compose.onAllNodesWithText("In your library").assertCountEquals(0)
+        compose.onNodeWithText("Removed from your library").assertIsDisplayed()
         compose.onNodeWithText("Undo").performClick()
         compose.waitUntil(5_000) { store.library.value.items.isNotEmpty() }
     }

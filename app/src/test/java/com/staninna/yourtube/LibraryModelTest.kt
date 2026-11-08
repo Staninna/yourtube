@@ -59,7 +59,7 @@ class LibraryModelTest {
         assertEquals(listOf(videoId), store.library.value.items.map { it.id })
     }
 
-    @Test fun unstarringNeedsNoSheetAndCanBeUndone() = runTest {
+    @Test fun aFilledStarOpensTheSheetAgainAndRemoveFromLibraryCanBeUndone() = runTest {
         val model = model()
         target.value = video
         model.onStarClick()
@@ -67,6 +67,11 @@ class LibraryModelTest {
         model.closeTagSheet()
 
         model.onStarClick()
+        assertTrue("the filled star edits, it does not unstar", model.starred.value)
+        assertEquals(videoId, model.tagSheet.value?.item?.id)
+        assertTrue(events.isEmpty())
+
+        model.removeFromLibrary(videoId)
         assertTrue(store.library.value.items.isEmpty())
         assertNull(model.tagSheet.value)
         model.undoUnstar(events.single() as UiEvent.Unstarred)

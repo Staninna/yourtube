@@ -49,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
@@ -149,8 +150,9 @@ private fun WatchTopBar(
 }
 
 /**
- * Stars what Watch shows and opens its tag sheet, or unstars it with Undo. Disabled while the page is
- * not identified yet (a `/@handle` channel resolving); TalkBack hears "Starred" or "Not starred".
+ * Stars what Watch shows and opens its tag sheet; on a starred page it opens the sheet to edit it.
+ * Disabled while the page is not identified yet (a `/@handle` channel resolving). TalkBack hears
+ * "Starred" or "Not starred", and on a starred page offers "Edit tags" as the action.
  */
 @Composable
 private fun StarToggle(vm: MainViewModel, onDarkBar: Boolean) {
@@ -163,7 +165,15 @@ private fun StarToggle(vm: MainViewModel, onDarkBar: Boolean) {
         onCheckedChange = { vm.library.onStarClick() },
         enabled = target != null,
         colors = IconButtonDefaults.iconToggleButtonColors(checkedContentColor = tint),
-        modifier = Modifier.semantics { stateDescription = if (starred) "Starred" else "Not starred" },
+        modifier = Modifier.semantics {
+            stateDescription = if (starred) "Starred" else "Not starred"
+            if (starred) {
+                onClick(label = "Edit tags") {
+                    vm.library.onStarClick()
+                    true
+                }
+            }
+        },
     ) {
         Icon(if (starred) Icons.Filled.Star else Icons.Outlined.StarBorder, contentDescription = "Star")
     }

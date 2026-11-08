@@ -75,17 +75,13 @@ class LibraryModel(
     }
 
     /**
-     * The Watch star. An unstarred page is starred at once and its tag sheet opens; dismissing the sheet
-     * keeps the star. A starred one is unstarred without a sheet, with Undo.
+     * The Watch star. An unstarred page is starred at once; either way its tag sheet opens, to edit its
+     * tags or take it out again. Dismissing the sheet keeps the star.
      */
     fun onStarClick() {
         val target = starTarget.value ?: return
-        if (starred.value) {
-            unstar(target.id)
-        } else {
-            store.star(target)
-            openTagSheet(target.id)
-        }
+        if (!starred.value) store.star(target)
+        openTagSheet(target.id)
     }
 
     /** Takes [itemId] out of the library, offering Undo. */
@@ -96,6 +92,12 @@ class LibraryModel(
     }
 
     fun undoUnstar(event: UiEvent.Unstarred) = store.restoreStar(event.item)
+
+    /** The tag sheet's Remove from library: the sheet closes and the item leaves, with Undo. */
+    fun removeFromLibrary(itemId: String) {
+        closeTagSheet()
+        unstar(itemId)
+    }
 
     fun openTagSheet(itemId: String) {
         unsubscribed = null

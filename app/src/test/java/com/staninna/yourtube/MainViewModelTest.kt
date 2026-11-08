@@ -166,6 +166,9 @@ class MainViewModelTest {
         vm.library.closeTagSheet()
 
         vm.library.onStarClick()
+        assertTrue("a filled star opens the sheet again", vm.library.starred.value)
+        assertEquals(video, vm.library.tagSheet.value?.item?.id)
+        vm.library.removeFromLibrary(video)
         assertFalse(vm.library.starred.value)
         vm.undo(events.tryReceive().getOrNull() as UiEvent.Unstarred)
         assertTrue(vm.library.starred.value)

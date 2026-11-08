@@ -20,7 +20,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -30,6 +32,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
@@ -59,9 +62,9 @@ import com.staninna.yourtube.ui.components.TagChip
 import kotlinx.coroutines.launch
 
 /**
- * The tag sheet, over everything while the view model has one open: opened by starring in Watch and
+ * The tag sheet, over everything while the view model has one open: opened by the star in Watch and
  * by long-pressing a Library row. Tags apply as they are tapped, so dismissing it any way keeps the
- * star and every change.
+ * star and every change. Remove from library takes the item out, with Undo.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,13 +79,14 @@ fun TagSheetHost(library: LibraryModel) {
             shown,
             library,
             onDone = { scope.launch { state.hide() }.invokeOnCompletion { library.closeTagSheet() } },
+            onRemove = { scope.launch { state.hide() }.invokeOnCompletion { library.removeFromLibrary(shown.item.id) } },
         )
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TagSheetContent(sheet: TagSheet, library: LibraryModel, onDone: () -> Unit) {
+private fun TagSheetContent(sheet: TagSheet, library: LibraryModel, onDone: () -> Unit, onRemove: () -> Unit) {
     val item = sheet.item
     Column(
         Modifier
@@ -112,7 +116,16 @@ private fun TagSheetContent(sheet: TagSheet, library: LibraryModel, onDone: () -
             SectionLabel("Channel")
             SubscribeRow(channel, sheet.channelStarred, onChange = { library.setSubscribed(channel, it) })
         }
-        Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.End) {
+        Row(
+            Modifier.fillMaxWidth().padding(top = 24.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // No confirm: the snackbar's Undo brings the item back with its tags.
+            TextButton(onClick = onRemove, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                Text("Remove from library", Modifier.padding(start = ButtonDefaults.IconSpacing))
+            }
             Button(onClick = onDone) { Text("Done") }
         }
     }
