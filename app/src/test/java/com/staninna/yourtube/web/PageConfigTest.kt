@@ -35,6 +35,19 @@ class PageConfigTest {
         assertEquals(PageConfig.of(Settings()), PageConfig.of(off(AdLayer.NETWORK)))
     }
 
+    @Test fun youTubesSubscribeButtonIsHiddenWhateverTheAdLayers() {
+        for (settings in listOf(Settings(), off(*AdLayer.entries.toTypedArray()))) {
+            val css = PageConfig.css(settings)
+            assertTrue(css.contains("yt-page-header-view-model:has(yt-decorated-avatar-view-model) yt-flexible-actions-view-model{display:none"))
+            // Every rule that reaches a page header's action row is the channel's: a playlist's holds Save and Share.
+            val headerActions = css.split('{', '}', ',').map { it.trim() }.filter { "yt-flexible-actions-view-model" in it }
+            assertEquals(listOf("yt-page-header-view-model:has(yt-decorated-avatar-view-model) yt-flexible-actions-view-model"), headerActions)
+            // Hidden but measured: display:none would make YouTube fold the watch page's actions into More.
+            assertTrue(css.contains(".slim-subscribe-button{visibility:hidden !important}"))
+            assertFalse(css.contains(".slim-subscribe-button,"))
+        }
+    }
+
     @Test fun theDisplayLayerLeavesThePlayersAdOverlayAlone() =
         assertFalse(PageConfig.css(Settings()).contains(".video-ads"))
 

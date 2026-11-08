@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ButtonGroupDefaults
@@ -17,6 +18,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.runtime.Composable
@@ -29,6 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /** A chip in a [FilterChipsRow]; [key] identifies it in the selection, [color] is its tag's dot. */
 data class ChipOption(val key: String, val label: String, val color: Color)
@@ -79,7 +82,8 @@ fun TagDot(color: Color, modifier: Modifier = Modifier, size: Dp = 10.dp) {
 
 /**
  * Single choice among a few [segments] as an expressive connected button group, full width (Library's
- * Subs | Videos | Playlists, Feeds' page size). Each segment reads as a radio button to TalkBack.
+ * Subs | Videos | Playlists, Feeds' page size). Each segment reads as a radio button to TalkBack. A
+ * label too long for its third at a large font scale ("Automatic" at 1.3) shrinks to fit, never past 10 sp.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -105,7 +109,9 @@ fun SegmentedButtons(
                     segments.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                 },
-            ) { Text(label, maxLines = 1) }
+            ) {
+                Text(label, maxLines = 1, autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = LocalTextStyle.current.fontSize))
+            }
         }
     }
 }

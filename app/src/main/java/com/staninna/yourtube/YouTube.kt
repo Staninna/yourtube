@@ -78,8 +78,15 @@ object YouTube {
 
     private val START_PARAMS = setOf("t", "start")
 
-    /** [url] as it is worth sharing: the desktop host, which opens in the YouTube app or any browser. */
-    fun shareUrl(url: String): String = url.replaceFirst("://m.youtube.com", "://www.youtube.com")
+    /**
+     * [url] as it is worth sharing: the desktop host, which opens in the YouTube app or any browser,
+     * and only the video, the playlist and its position (`v`, `list`, `index`), so YouTube's own
+     * (`pp`, `si`, `feature`) stay home. The start time goes too: it is the one the page opened with,
+     * stale once the video plays on, so a shared video opens from the start. A page incoming links do
+     * not cover, such as search results, keeps its parameters.
+     */
+    fun shareUrl(url: String): String =
+        withoutStartTime(DeepLinks.extract(url) ?: url).replaceFirst("://m.youtube.com", "://www.youtube.com")
 
     /**
      * YouTube's page background. Its header has the same color, except on watch pages, where it is

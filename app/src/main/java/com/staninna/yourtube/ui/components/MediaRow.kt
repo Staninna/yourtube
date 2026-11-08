@@ -89,8 +89,8 @@ fun MediaRow(
     ) {
         when (leading) {
             is MediaLeading.Thumbnail -> Thumbnail(leading, Modifier.width(LEADING_WIDTH))
-            // At the start of the same slot a still takes, as tall as a still, so titles line up with video rows.
-            is MediaLeading.Avatar -> Box(Modifier.width(LEADING_WIDTH), contentAlignment = Alignment.CenterStart) {
+            // Centered in the slot a still takes, as tall as a still, so titles line up with video rows.
+            is MediaLeading.Avatar -> Box(Modifier.width(LEADING_WIDTH), contentAlignment = Alignment.Center) {
                 ChannelAvatar(leading.name, leading.key, leading.url, size = LEADING_WIDTH * 9f / 16f)
             }
         }

@@ -223,7 +223,7 @@ class LibraryFlowsTest {
         compose.waitUntil(5_000) { store.library.value.tags.single().color == teal.argb }
 
         compose.onNodeWithContentDescription("Delete Jazz").performClick()
-        compose.onNodeWithText("It comes off 1 item. They stay in your library.").assertIsDisplayed()
+        compose.onNodeWithText("It comes off 1 item. The item stays in your library.").assertIsDisplayed()
         compose.onNodeWithText("Delete").performClick()
         compose.waitUntil(5_000) { store.library.value.tags.isEmpty() }
         compose.onNodeWithText("Your tags show up here", substring = true).assertIsDisplayed()

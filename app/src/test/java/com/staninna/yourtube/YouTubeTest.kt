@@ -34,8 +34,24 @@ class YouTubeTest {
     }
 
     @Test fun sharedLinksUseTheDesktopHost() {
-        assertEquals("https://www.youtube.com/watch?v=x&t=42", YouTube.shareUrl("https://m.youtube.com/watch?v=x&t=42"))
+        assertEquals("https://www.youtube.com/watch?v=x", YouTube.shareUrl("https://m.youtube.com/watch?v=x&t=42"))
         assertEquals("https://www.youtube.com/@veritasium", YouTube.shareUrl("https://www.youtube.com/@veritasium"))
+    }
+
+    @Test fun sharedLinksLeaveYouTubesOwnParametersAndTheStartTimeBehind() {
+        assertEquals(
+            "https://www.youtube.com/watch?v=7hlTu95nOCw",
+            YouTube.shareUrl("https://m.youtube.com/watch?v=7hlTu95nOCw&t=100s&pp=2AFkkAIB"),
+        )
+        assertEquals(
+            "https://www.youtube.com/watch?v=7hlTu95nOCw&list=PL0123456789abcdef",
+            YouTube.shareUrl("https://m.youtube.com/watch?v=7hlTu95nOCw&start=30&list=PL0123456789abcdef"),
+        )
+        assertEquals(
+            "https://www.youtube.com/watch?v=7hlTu95nOCw&list=PL0123456789abcdef",
+            YouTube.shareUrl("https://m.youtube.com/watch?feature=share&v=7hlTu95nOCw&si=abc&list=PL0123456789abcdef"),
+        )
+        assertEquals("https://www.youtube.com/results?search_query=cats", YouTube.shareUrl("https://m.youtube.com/results?search_query=cats"))
     }
 
     @Test fun pageBackgroundFollowsTheTheme() {

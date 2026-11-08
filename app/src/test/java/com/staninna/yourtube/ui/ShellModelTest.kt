@@ -122,10 +122,10 @@ class ShellModelTest {
         assertEquals(SwitchState(checked = false, enabled = false), SettingsModel.dynamicColor(Settings(dynamicColor = true), false))
     }
 
-    @Test fun diagnosticsListMostFrequentFirst() {
-        val rows = SettingsModel.diagnostics(mapOf("b.event" to 2, "a.event" to 2, "c.event" to 5))
-        assertEquals(listOf("c.event" to 5, "a.event" to 2, "b.event" to 2), rows)
-        assertTrue(SettingsModel.diagnostics(emptyMap()).isEmpty())
+    @Test fun diagnosticsListMostFrequentFirstUnderOneLabel() {
+        val text = SettingsModel.diagnostics(mapOf("b.event" to 2, "a.event" to 2, "c.event" to 5, "d.event" to 1))
+        assertEquals("c.event: 5 times\na.event: 2 times\nb.event: 2 times\nd.event: once", text)
+        assertEquals("Nothing unusual since the app started", SettingsModel.diagnostics(emptyMap()))
     }
 
     @Test fun pipSummarySaysWhatTheModeDoesOrWhyItIsLocked() {

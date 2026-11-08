@@ -199,18 +199,14 @@ fun SettingsScreen(vm: MainViewModel, snackbars: Snackbars, backup: BackupAction
     }
 }
 
-private fun aboutRows(webView: PackageInfo?, events: List<Pair<String, Int>>): List<SettingRow> {
+private fun aboutRows(webView: PackageInfo?, diagnostics: String): List<SettingRow> {
     val version = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})" + if (BuildConfig.DEBUG) " debug" else ""
     val provider = webView?.let { "${it.versionName} · ${it.packageName}" } ?: "Unknown"
-    val diagnostics: List<SettingRow> = if (events.isEmpty()) {
-        listOf { shapes -> InfoRow("Diagnostics", "Nothing unusual since the app started", shapes) }
-    } else {
-        events.map { (event, count) -> { shapes -> InfoRow(event, if (count == 1) "Once" else "$count times", shapes) } }
-    }
     return listOf<SettingRow>(
         { shapes -> InfoRow("Version", version, shapes) },
         { shapes -> InfoRow("WebView", provider, shapes) },
-    ) + diagnostics
+        { shapes -> InfoRow("Diagnostics", diagnostics, shapes) },
+    )
 }
 
 /** The in-app predictive back look: scale down, slide toward the swiped edge, round the corners. */

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -87,11 +88,16 @@ fun FeedsScreen(vm: MainViewModel, onSearch: () -> Unit, onSettings: () -> Unit)
     val view by vm.feeds.view.collectAsStateWithLifecycle()
     val progress by vm.progress.collectAsStateWithLifecycle()
     val feeds = vm.feeds
+    // A new chip selection is a new list, so it starts at its top.
+    val list = remember(view.selected) { LazyListState() }
+    // The bar tints from where the list is; with no list on screen there is nothing under it.
+    val notScrolled = rememberScrollState()
 
     TabScaffold(
         title = "Feeds",
         onSearch = onSearch,
         onSettings = onSettings,
+        scrolled = if (view.status == FeedView.Status.LIST) list else notScrolled,
         actions = {
             // Pull to refresh has no TalkBack gesture; the button is its accessible twin.
             if (view.subscriptions > 0) IconButton(onClick = feeds::refresh, enabled = !view.loading) { Icon(Icons.Filled.Refresh, "Refresh feeds") }
@@ -126,16 +132,22 @@ fun FeedsScreen(vm: MainViewModel, onSearch: () -> Unit, onSettings: () -> Unit)
                     PullToRefreshDefaults.LoadingIndicator(state = pull, isRefreshing = view.refreshing, modifier = Modifier.align(Alignment.TopCenter))
                 },
             ) {
-                FeedsContent(view, progress, feeds, onOpen = vm::open)
+                FeedsContent(view, progress, feeds, list, onOpen = vm::open)
             }
         }
     }
 }
 
 @Composable
-private fun FeedsContent(view: FeedView, progress: Map<String, WatchProgress>, feeds: FeedsModel, onOpen: (String) -> Unit) {
+private fun FeedsContent(
+    view: FeedView,
+    progress: Map<String, WatchProgress>,
+    feeds: FeedsModel,
+    list: LazyListState,
+    onOpen: (String) -> Unit,
+) {
     when (view.status) {
-        FeedView.Status.LIST -> FeedList(view, progress, feeds, onOpen)
+        FeedView.Status.LIST -> FeedList(view, progress, feeds, list, onOpen)
         FeedView.Status.LOADING -> LoadingState("Fetching new videos")
         FeedView.Status.OFFLINE -> ErrorState(
             icon = Icons.Outlined.CloudOff,
@@ -168,11 +180,16 @@ private fun FeedsContent(view: FeedView, progress: Map<String, WatchProgress>, f
 }
 
 @Composable
-private fun FeedList(view: FeedView, progress: Map<String, WatchProgress>, feeds: FeedsModel, onOpen: (String) -> Unit) {
-    // A new chip selection is a new list, so it starts at its top.
-    val list = remember(view.selected) { LazyListState() }
+private fun FeedList(
+    view: FeedView,
+    progress: Map<String, WatchProgress>,
+    feeds: FeedsModel,
+    list: LazyListState,
+    onOpen: (String) -> Unit,
+) {
     val scope = rememberCoroutineScope()
-    val atTop by remember { derivedStateOf { list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset == 0 } }
+    // Keyed on the list, which is new for each chip selection.
+    val atTop by remember(list) { derivedStateOf { list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset == 0 } }
     val firstKey: Any? = if (view.failed.isNotEmpty()) NOTICE_KEY else view.videos.firstOrNull()?.videoId
     KeepTopInView(list, firstKey)
     // At the top the new videos are in sight; the pill is only for a list scrolled down.

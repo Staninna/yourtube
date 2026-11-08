@@ -29,7 +29,12 @@ object SettingsModel {
     /** The Manage tags row's summary. */
     fun tagCount(count: Int): String = if (count == 0) "No tags yet" else plural(count, "tag", "tags")
 
-    /** Diagnostics events, most frequent first, ties by name. */
-    fun diagnostics(counts: Map<String, Int>): List<Pair<String, Int>> =
-        counts.entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key }).map { it.key to it.value }
+    /** The Diagnostics row's text: one line per event, most frequent first, ties by name. */
+    fun diagnostics(counts: Map<String, Int>): String =
+        if (counts.isEmpty()) {
+            "Nothing unusual since the app started"
+        } else {
+            counts.entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+                .joinToString("\n") { (event, count) -> "$event: " + if (count == 1) "once" else "$count times" }
+        }
 }

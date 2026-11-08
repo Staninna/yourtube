@@ -86,7 +86,13 @@ object PageConfig {
     /**
      * Sign-in prompts, Premium and app-install promos: nothing a signed-out viewer can act on. The
      * "Get the best experience / Watch in YouTube app" dialog is known by its growth-promo image, with
-     * the full-screen container it sits in.
+     * the full-screen container it sits in. YouTube's Subscribe button only asks the viewer to sign in
+     * (the star subscribes here). On channel pages it goes with the header's action row, which holds
+     * Subscribe and, for some channels, Join, which needs an account too; the channel's avatar
+     * (`yt-decorated-avatar-view-model`) tells that header from a playlist's, whose row holds Save,
+     * Share and More. On watch pages
+     * (`.slim-subscribe-button`) it is invisible but keeps its width: YouTube sizes the action row
+     * around it, and with it gone moves dislike, share, save and report into the More menu.
      */
     private val NAG_CSS = listOf(
         "#dialog-container:has(img[src*=\"/img/promos/growth/\"])",
@@ -94,7 +100,8 @@ object PageConfig {
         "ytm-statement-banner-renderer", "ytm-sign-in-promo-renderer", "ytm-account-promo-renderer",
         ".mobile-topbar-header-sign-in-button", "ytm-open-app-button-renderer", "ytm-app-promo-renderer",
         "ytm-inline-survey-renderer", "ytm-brand-video-singleton-renderer",
-    ).joinToString(",") + "{display:none !important}"
+        "yt-page-header-view-model:has(yt-decorated-avatar-view-model) yt-flexible-actions-view-model",
+    ).joinToString(",") + "{display:none !important}\n.slim-subscribe-button{visibility:hidden !important}"
 
     /**
      * Display ads in pages: promoted videos and "sparkles" cards (under the player and in results),

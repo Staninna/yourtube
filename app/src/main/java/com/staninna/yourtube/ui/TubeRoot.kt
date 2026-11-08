@@ -45,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -52,6 +53,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -86,6 +89,8 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
     val snackbars = remember { Snackbars(SnackbarHostState(), SnackbarHostState()) }
     val backup = rememberBackupActions(vm)
     val corrupt by vm.corruptNotice.collectAsStateWithLifecycle()
+    // The now-playing bar's height as it animates, so notices rise above it instead of covering it.
+    var nowPlayingHeight by remember { mutableIntStateOf(0) }
 
     // The newest notice replaces the one showing; its Undo goes with it, as in any Material app.
     LaunchedEffect(vm) {
@@ -145,7 +150,11 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
             modifier = if (overlayOpen) Modifier.clearAndSetSemantics {} else Modifier,
             bottomBar = { if (!inPip) TubeNavigationBar(tab, vm::selectTab) },
             // While Settings is open its own host shows the notices.
-            snackbarHost = { if (!settingsOpen && !inPip) SnackbarStack(snackbars) },
+            snackbarHost = {
+                // Watch hides the native tabs, so the bar's last measured height is stale there.
+                val lift = with(LocalDensity.current) { (if (tab != Tab.WATCH) nowPlayingHeight else 0).toDp() }
+                if (!settingsOpen && !inPip) SnackbarStack(snackbars, Modifier.padding(bottom = lift))
+            },
             contentWindowInsets = WindowInsets(0),
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
@@ -157,7 +166,7 @@ fun TubeRoot(vm: MainViewModel, host: WebViewHost) {
                     onSettings = openSettings,
                     modifier = if (tab != Tab.WATCH) Modifier.clearAndSetSemantics {} else Modifier,
                 )
-                if (!inPip) NativeTabs(tab, vm, nowPlaying, openSearch, openSettings, overlayOpen)
+                if (!inPip) NativeTabs(tab, vm, nowPlaying, openSearch, openSettings, overlayOpen) { nowPlayingHeight = it }
             }
         }
         AnimatedVisibility(
@@ -189,6 +198,7 @@ private fun NativeTabs(
     onSearch: () -> Unit,
     onSettings: () -> Unit,
     overlayOpen: Boolean,
+    onNowPlayingHeight: (Int) -> Unit,
 ) {
     val effects = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
     val spatial = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
@@ -211,13 +221,16 @@ private fun NativeTabs(
                         Tab.WATCH -> Box(Modifier.fillMaxSize())
                     }
                 }
-                AnimatedVisibility(
-                    // Native tabs only: Watch shows the video itself, and Settings and search cover the shell.
-                    visible = nowPlaying != null && tab != Tab.WATCH && !overlayOpen,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut(),
-                ) {
-                    nowPlaying?.let { NowPlayingBar(it, onOpen = { vm.selectTab(Tab.WATCH) }, onPlayPause = vm::playPause) }
+                // Measured around the bar, since a hidden AnimatedVisibility leaves no node to report its 0 height.
+                Column(Modifier.onSizeChanged { onNowPlayingHeight(it.height) }) {
+                    AnimatedVisibility(
+                        // Native tabs only: Watch shows the video itself, and Settings and search cover the shell.
+                        visible = nowPlaying != null && tab != Tab.WATCH && !overlayOpen,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut(),
+                    ) {
+                        nowPlaying?.let { NowPlayingBar(it, onOpen = { vm.selectTab(Tab.WATCH) }, onPlayPause = vm::playPause) }
+                    }
                 }
             }
         }

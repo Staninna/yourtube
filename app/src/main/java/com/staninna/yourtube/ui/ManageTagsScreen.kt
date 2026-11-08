@@ -243,7 +243,8 @@ private fun DeleteDialog(tag: Tag, count: Int, onDismiss: () -> Unit, onConfirm:
                 if (count == 0) {
                     "No items carry this tag."
                 } else {
-                    "It comes off ${itemCount(count).lowercase()}. They stay in your library."
+                    "It comes off ${itemCount(count).lowercase()}. " +
+                        if (count == 1) "The item stays in your library." else "The items stay in your library."
                 },
             )
         },

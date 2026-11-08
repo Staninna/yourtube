@@ -1,5 +1,6 @@
 package com.staninna.yourtube.ui.components
 
+import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -45,9 +46,19 @@ fun TabScaffold(
     onSearch: () -> Unit,
     onSettings: () -> Unit,
     actions: @Composable () -> Unit = {},
+    /**
+     * The content's scroll position, for a screen whose list moves without a scroll gesture (a fresh
+     * list, a jump to the top, pull to refresh): the bar then tints whenever it is off its start.
+     * Without it the bar tints by adding up scroll gestures.
+     */
+    scrolled: ScrollableState? = null,
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    val scrollBehavior = if (scrolled != null) {
+        TopAppBarDefaults.pinnedScrollBehavior(scrollableState = scrolled, canScroll = { false })
+    } else {
+        TopAppBarDefaults.pinnedScrollBehavior()
+    }
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {

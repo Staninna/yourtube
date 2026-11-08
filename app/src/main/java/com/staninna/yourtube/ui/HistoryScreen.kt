@@ -36,12 +36,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.staninna.yourtube.MainViewModel
+import com.staninna.yourtube.Tab
 import com.staninna.yourtube.data.HistoryDays
 import com.staninna.yourtube.data.HistoryEntry
 import com.staninna.yourtube.data.WatchProgress
 import com.staninna.yourtube.ui.components.EmptyState
 import com.staninna.yourtube.ui.components.MediaLeading
 import com.staninna.yourtube.ui.components.MediaRow
+import com.staninna.yourtube.ui.components.StateAction
 import com.staninna.yourtube.ui.components.TabScaffold
 import java.time.LocalDate
 import java.time.ZoneId
@@ -68,6 +70,7 @@ fun HistoryScreen(vm: MainViewModel, onSearch: () -> Unit, onSettings: () -> Uni
                 icon = Icons.Filled.History,
                 title = "No history yet",
                 body = "Videos you watch show up here and pick up where you left off.",
+                action = StateAction("Browse YouTube") { vm.selectTab(Tab.WATCH) },
                 modifier = Modifier.padding(padding),
             )
             return@TabScaffold

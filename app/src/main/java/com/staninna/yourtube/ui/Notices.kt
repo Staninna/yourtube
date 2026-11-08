@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import com.staninna.yourtube.UiEvent
 import com.staninna.yourtube.data.BackupProblem
 import com.staninna.yourtube.data.ImportReport
@@ -66,8 +67,8 @@ class Snackbars(val events: SnackbarHostState, val notice: SnackbarHostState)
 
 /** Both queues, the waiting notice above the passing ones, for a Scaffold's snackbar slot. */
 @Composable
-fun SnackbarStack(snackbars: Snackbars) {
-    Column {
+fun SnackbarStack(snackbars: Snackbars, modifier: Modifier = Modifier) {
+    Column(modifier) {
         SnackbarHost(snackbars.notice)
         SnackbarHost(snackbars.events)
     }
