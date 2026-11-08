@@ -191,15 +191,15 @@ private fun WatchedBar(fraction: Float, modifier: Modifier) {
             .clip(CircleShape)
             .background(Color.White.copy(alpha = 0.5f)),
     ) {
-        Box(Modifier.fillMaxHeight().fillMaxWidth(fraction.coerceAtLeast(0.04f)).clip(CircleShape).background(WATCHED_RED))
+        Box(Modifier.fillMaxHeight().fillMaxWidth(fraction.coerceAtLeast(0.04f)).clip(CircleShape).background(WATCHED_PURPLE))
     }
 }
 
 /** The leading slot's width: a 16:9 still, or an avatar as tall as one. */
 private val LEADING_WIDTH = 144.dp
 
-/** YouTube's progress red: the cue viewers already read as "watched", legible on any still. */
-private val WATCHED_RED = Color(0xFFFF0033)
+/** The app icon's purple, which also replaces YouTube's red progress bars in pages (PageConfig). */
+private val WATCHED_PURPLE = Color(0xFF7C3AED)
 
 private fun describe(progress: WatchProgress): String =
     if (progress.finished) "Watched" else "${(progress.fraction * 100).roundToInt()}% watched"

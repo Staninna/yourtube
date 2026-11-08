@@ -36,6 +36,7 @@ object PageConfig {
         add("ytm-app,#app,[has-pivot-bar=\"true\"] ytm-app{padding-bottom:0 !important}")
         add(HEADER_CSS)
         add(NAG_CSS)
+        add(BRAND_CSS)
         if (settings.adBlocking.isOn(AdLayer.DISPLAY)) add(DISPLAY_ADS_CSS)
         if (settings.removeShorts) add(SHORTS_CSS)
     }.joinToString("\n")
@@ -102,6 +103,44 @@ object PageConfig {
         "ytm-inline-survey-renderer", "ytm-brand-video-singleton-renderer",
         "yt-page-header-view-model:has(yt-decorated-avatar-view-model) yt-flexible-actions-view-model",
     ).joinToString(",") + "{display:none !important}\n.slim-subscribe-button{visibility:hidden !important}"
+
+    /** The app icon's purple, which takes the place of YouTube's brand red in pages. */
+    internal const val BRAND_PURPLE = "#7C3AED"
+
+    /** The ways YouTube writes its red in an icon's `fill` attribute, matched ignoring case. */
+    private val RED_FILLS = listOf("#f03", "#ff0033", "#f00", "#ff0000")
+
+    /** Where YouTube's progress gradients fade to (its own goes from red to pink). */
+    private const val BRAND_PURPLE_END = "#A855F7"
+
+    /**
+     * YouTube's red in the app icon's purple. The player reads the brand red from a variable; the
+     * progress bars (player, chapters, resume bars on stills), the playhead, the big play buttons and
+     * the logos have it hard-coded, each found on the live home and watch pages. Home's logo above the
+     * search box is a PNG (`.search-bar-entry-point-top-image`), so `content` swaps in the same play
+     * button as an SVG in purple with a white arrow. The header logo, shown while YouTube's own search
+     * is open, is an SVG whose red path is recolored.
+     */
+    private val BRAND_CSS = listOf(
+        ":root{--yt-sys-color-baseline--static-brand-red:$BRAND_PURPLE !important;" +
+            "--yt-sys-color-baseline--red-indicator:$BRAND_PURPLE !important}",
+        ".ytChapteredProgressBarChapteredPlayerBarChapterSeen,.ytChapteredProgressBarChapteredPlayerBarFill," +
+            ".ytFocusedChapterProgressBarLineProgressBarPlayed,.ytProgressBarLineProgressBarPlayed," +
+            ".ytwThumbnailOverlayResumePlaybackRendererThumbnailOverlayResumePlaybackProgress" +
+            "{background-image:linear-gradient(90deg,$BRAND_PURPLE 80%,$BRAND_PURPLE_END) !important}",
+        ".ytProgressBarPlayheadProgressBarPlayheadDot{background-color:$BRAND_PURPLE !important}",
+        ".ytmCuedOverlayPlayButtonIcon,.YtmBottomSheetOverlayRendererCentralIcon,.logo-in-player,.mobile-topbar-logo" +
+            "{color:$BRAND_PURPLE !important}",
+        ".ytm-player-endscreen .endscreen-logo-play-button c3-icon{fill:$BRAND_PURPLE !important}",
+        ".search-bar-entry-point-top-image{content:url(\"data:image/svg+xml," +
+            "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28.57 20'%3E" +
+            "%3Cpath fill='%23${BRAND_PURPLE.drop(1)}' d='M27.97 3.12A3.58 3.58 0 0 0 25.45.6C23.22 0 14.29 0 14.29 0" +
+            "S5.35 0 3.12.6A3.58 3.58 0 0 0 .6 3.12C0 5.35 0 10 0 10s0 4.65.6 6.88a3.58 3.58 0 0 0 2.52 2.52" +
+            "C5.35 20 14.29 20 14.29 20s8.93 0 11.16-.6a3.58 3.58 0 0 0 2.52-2.52c.6-2.23.6-6.88.6-6.88s0-4.65-.6-6.88Z'/%3E" +
+            "%3Cpath fill='%23fff' d='M11.43 14.29 18.85 10l-7.42-4.29Z'/%3E%3C/svg%3E\") !important}",
+        // Icons with the red written on the path: the header logo, the Shorts shelf's logo.
+        RED_FILLS.joinToString(",") { "path[fill=\"$it\" i]" } + "{fill:$BRAND_PURPLE !important}",
+    ).joinToString("\n")
 
     /**
      * Display ads in pages: promoted videos and "sparkles" cards (under the player and in results),

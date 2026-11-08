@@ -48,6 +48,19 @@ class PageConfigTest {
         }
     }
 
+    @Test fun youTubesLogoTurnsTheAppIconsPurple() {
+        val css = PageConfig.css(Settings())
+        val home = css.lines().single { it.startsWith(".search-bar-entry-point-top-image{content:url(") }
+        // The data URL is percent-encoded: a raw '#' would end it at the fill color.
+        assertTrue(home.contains("fill='%237C3AED'"))
+        assertFalse(home.substringAfter("url(").substringBefore(") !important").contains('#'))
+        assertTrue(css.contains("path[fill=\"#f03\" i],path[fill=\"#ff0033\" i],path[fill=\"#f00\" i],path[fill=\"#ff0000\" i]{fill:#7C3AED !important}"))
+        assertTrue(css.contains("--yt-sys-color-baseline--static-brand-red:#7C3AED !important"))
+        val bars = css.lines().single { it.startsWith(".ytChapteredProgressBarChapteredPlayerBarChapterSeen,") }
+        assertTrue(bars.contains(".ytwThumbnailOverlayResumePlaybackRendererThumbnailOverlayResumePlaybackProgress"))
+        assertTrue(bars.endsWith("{background-image:linear-gradient(90deg,#7C3AED 80%,#A855F7) !important}"))
+    }
+
     @Test fun theDisplayLayerLeavesThePlayersAdOverlayAlone() =
         assertFalse(PageConfig.css(Settings()).contains(".video-ads"))
 
