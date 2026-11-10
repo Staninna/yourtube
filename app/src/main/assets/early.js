@@ -1,6 +1,6 @@
 // YourTube early script. Runs at document start in every YouTube frame, before page scripts.
 // It touches no DOM elements (there are none yet): the app CSS goes in as an adopted stylesheet, and
-// the player-ads layer wraps JSON.parse, fetch and XHR. Background playback needs nothing here: the
+// the player-ads and sign-in layers wrap JSON.parse, fetch and XHR. Background playback needs nothing here: the
 // WebView reports a visible window while it may play (TubeWebView). Picture-in-picture needs the
 // window's outer size pinned and a stylesheet that fills the window with the video. Native replaces
 // the config literal at the bottom with the current settings (see PageConfig.kt); running the script
@@ -104,17 +104,115 @@
     } catch (e) { return false }
   }
 
-  var urlSource = null
-  var urlPattern = null
-  function wanted(url) {
-    var rules = current.prune
-    if (!rules) return false
-    try {
-      if (urlSource !== rules.urls) {
-        urlPattern = new RegExp(rules.urls)
-        urlSource = rules.urls
+  // --- sign-in-only actions: buttons that only ask a signed-out viewer to sign in leave page data ---
+  // YouTube marks every such button in the data it renders pages from, whatever the layout or language:
+  // tapping it leads to a signInEndpoint (straight away or through a "Sign in to like" dialog). An
+  // element of the render tree goes when it leads to sign-in and to nothing else: no link, share, menu
+  // or other action of its own. Actions that only work signed in (config.signIn.neutral: like,
+  // subscribe and the like) and a sign-in dialog's own plumbing (Cancel, "Open app", logging) count as
+  // nothing else. An action YouTube adds later counts as something else, so the button stays: unknown
+  // means shown. Dialogs are prompts and are left whole; sheets are menus and are walked like the page.
+  // The rules are SignInStrip in PageConfig.kt.
+
+  var COMMAND = /(Endpoint|Command|Action)$/
+
+  // Whether value's subtree leads to sign-in (state.signIn) and to anything else (state.other).
+  function scanActions(value, state, neutral) {
+    if (!value || typeof value !== 'object' || state.other) return state
+    if (Array.isArray(value)) {
+      for (var i = 0; i < value.length; i++) scanActions(value[i], state, neutral)
+      return state
+    }
+    for (var key in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) continue
+      if (key === 'signInEndpoint') { state.signIn = true; continue }
+      if (COMMAND.test(key)) {
+        // A command that wraps others is judged by what it wraps; a leaf by its own name.
+        var inner = scanActions(value[key], { signIn: false, other: false, command: false }, neutral)
+        if (inner.signIn) state.signIn = true
+        if (inner.other || (!inner.command && !inner.signIn && neutral.indexOf(key) < 0)) state.other = true
+        state.command = true
+        continue
       }
-      return urlPattern.test(new URL(String(url), location.href).href)
+      scanActions(value[key], state, neutral)
+    }
+    return state
+  }
+
+  function signInOnly(value, neutral) {
+    if (!value || typeof value !== 'object') return false
+    var state = scanActions(value, { signIn: false, other: false, command: false }, neutral)
+    return state.signIn && !state.other
+  }
+
+  // Removes sign-in-only elements from a render tree in place and says whether anything went.
+  function stripTree(value, rules) {
+    if (!value || typeof value !== 'object') return false
+    var changed = false
+    if (Array.isArray(value)) {
+      for (var i = value.length - 1; i >= 0; i--) {
+        if (signInOnly(value[i], rules.neutral)) { value.splice(i, 1); changed = true }
+        else if (stripTree(value[i], rules)) changed = true
+      }
+      return changed
+    }
+    for (var key in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, key) || rules.prompts.indexOf(key) >= 0) continue
+      var child = value[key]
+      if (child && typeof child === 'object' && !Array.isArray(child) && !COMMAND.test(key) && signInOnly(child, rules.neutral)) {
+        delete value[key]
+        changed = true
+      } else if (stripTree(child, rules)) changed = true
+    }
+    return changed
+  }
+
+  // Page data is an answer with responseContext. Player responses are left alone: their
+  // playabilityStatus may hold a Sign in button, and the player and the app's bot-check banner
+  // (main.js) read that object.
+  function isPageData(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value) && !!value.responseContext &&
+      !value.playabilityStatus && !value.videoDetails
+  }
+
+  // Strips page data in place: an answer itself, or its `response` (a watch answer, alone or as an
+  // array element: get_watch's shape, which also carries the playerResponse). Other JSON (settings,
+  // player state, small strings) is left alone.
+  function stripSignIn(value) {
+    var rules = current.signIn
+    if (!rules || !value || typeof value !== 'object') return false
+    try {
+      var answers = Array.isArray(value) ? value : [value]
+      var changed = false
+      answers.forEach(function (answer) {
+        if (!answer || typeof answer !== 'object') return
+        if (isPageData(answer) && stripTree(answer, rules)) changed = true
+        if (isPageData(answer.response) && stripTree(answer.response, rules)) changed = true
+      })
+      return changed
+    } catch (e) { return false }
+  }
+
+  // Both layers over one parsed answer; true when either changed it.
+  function transform(value) {
+    var pruned = prune(value)
+    var stripped = stripSignIn(value)
+    return pruned || stripped
+  }
+
+  var patterns = {}
+  function matches(source, href) {
+    if (!source) return false
+    if (!patterns[source]) patterns[source] = new RegExp(source)
+    return patterns[source].test(href)
+  }
+  function wanted(url) {
+    var adRules = current.prune
+    var signInRules = current.signIn
+    if (!adRules && !signInRules) return false
+    try {
+      var href = new URL(String(url), location.href).href
+      return matches(adRules && adRules.urls, href) || matches(signInRules && signInRules.urls, href)
     } catch (e) { return false }
   }
 
@@ -129,7 +227,7 @@
       enumerable: true,
       get: function () { return initialPlayerResponse },
       set: function (value) {
-        prune(value)
+        transform(value)
         initialPlayerResponse = value
       },
     })
@@ -138,7 +236,7 @@
   // Everything YouTube parses itself, including answers read as text.
   JSON.parse = function () {
     var value = nativeParse.apply(this, arguments)
-    prune(value)
+    transform(value)
     return value
   }
 
@@ -152,7 +250,7 @@
       return pending.then(function (response) {
         return response.clone().text().then(function (text) {
           var value = nativeParse(text)
-          if (!prune(value)) return response
+          if (!transform(value)) return response
           var pruned = new Response(JSON.stringify(value), {
             status: response.status, statusText: response.statusText, headers: response.headers,
           })
@@ -186,10 +284,10 @@
       var type = xhr.responseType
       state.done = { response: raw, text: type === '' || type === 'text' ? raw : null }
       try {
-        if (type === 'json') prune(raw)
+        if (type === 'json') transform(raw)
         else if (state.done.text) {
           var value = nativeParse(state.done.text)
-          if (prune(value)) {
+          if (transform(value)) {
             var text = JSON.stringify(value)
             state.done = { response: text, text: text }
           }

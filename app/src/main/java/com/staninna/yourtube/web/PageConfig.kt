@@ -15,6 +15,7 @@ import kotlinx.serialization.json.buildJsonObject
  * - `prune`: [PlayerAdPrune]'s rules while the player-ads layer is on, else null.
  * - `adSafetyNet`: whether `main.js` mutes and skips an ad that still plays.
  * - `removeShorts`: whether `main.js` sends Shorts links to the watch page.
+ * - `signIn`: [SignInStrip]'s rules: buttons that only ask a signed-out viewer to sign in leave page data.
  * - `segmentColors`: CSS colors by SponsorBlock category API name, for the progress bar marks.
  * - `fillCss`: the stylesheet `early.js` turns on in picture-in-picture.
  */
@@ -26,6 +27,7 @@ object PageConfig {
         put("prune", if (settings.adBlocking.isOn(AdLayer.PLAYER)) PlayerAdPrune.json else JsonNull)
         put("adSafetyNet", JsonPrimitive(settings.adBlocking.isOn(AdLayer.SAFETY_NET)))
         put("removeShorts", JsonPrimitive(settings.removeShorts))
+        put("signIn", SignInStrip.json)
         put("segmentColors", JsonObject(SegmentCategory.entries.associate { it.apiName to JsonPrimitive(cssColor(it.color)) }))
     }
 
@@ -209,6 +211,40 @@ object PageConfig {
         "yt-tab-shape[tab-title=\"Shorts\"]",
         "ytm-pivot-bar-item-renderer:has(.pivot-shorts)",
     ).joinToString(",") + "{display:none !important}"
+}
+
+/**
+ * Buttons that only ask a signed-out viewer to sign in, found by what they do rather than by their
+ * markup, so they stay gone when YouTube redraws a layout or adds one (Subscribe, like, dislike and Save
+ * came back under new element names more than once). `early.js` walks every page-data answer
+ * (anything with a `responseContext`: the initial data, `/youtubei/v1/next`, `browse`, `search` and the
+ * rest) and removes each element whose actions lead to a `signInEndpoint` and to nothing else.
+ * [NEUTRAL] actions don't count as something else; any other action keeps the element, so a button
+ * YouTube gives a new kind of action stays visible. [PROMPTS] are left whole: a dialog's own Sign in
+ * button is what such a dialog is for. The CSS rules in [PageConfig] stay as a second line.
+ */
+object SignInStrip {
+    /**
+     * Actions that don't make a button worth keeping for a signed-out viewer: ones that only work
+     * signed in (like, subscribe and unsubscribe, the bell's notification setting) and a sign-in
+     * dialog's own Cancel, "Open app" and logging.
+     */
+    val NEUTRAL = listOf(
+        "likeEndpoint", "subscribeEndpoint", "unsubscribeEndpoint", "signalServiceEndpoint",
+        "dismissDialogEndpoint", "nativeAppDeeplinkEndpoint", "logGestureCommand",
+    )
+
+    /** Commands whose content is a prompt rather than part of the page: left as they are. */
+    val PROMPTS = listOf("signInEndpoint", "showDialogCommand", "modalEndpoint", "openPopupAction")
+
+    /** Fetch and XHR answers that carry page data: every InnerTube call, and watch and playlist pages. */
+    const val URLS = """^https://(m|www)\.youtube\.com/(youtubei/v1/|watch\?|playlist\?)"""
+
+    val json: JsonObject = buildJsonObject {
+        put("neutral", JsonArray(NEUTRAL.map(::JsonPrimitive)))
+        put("prompts", JsonArray(PROMPTS.map(::JsonPrimitive)))
+        put("urls", JsonPrimitive(URLS))
+    }
 }
 
 /**

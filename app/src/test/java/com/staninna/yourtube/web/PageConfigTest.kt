@@ -144,4 +144,32 @@ class PageConfigTest {
         // Only in picture-in-picture: never part of the always-on stylesheet.
         assertFalse(PageConfig.css(Settings()).contains("object-fit"))
     }
+
+    @Test fun signInOnlyButtonsAreStrippedWhateverTheSettings() {
+        for (settings in listOf(Settings(), off(*AdLayer.entries.toTypedArray()), Settings(removeShorts = true))) {
+            assertEquals(SignInStrip.json, PageConfig.of(settings)["signIn"])
+        }
+        val rules = SignInStrip.json
+        val neutral = rules["neutral"]!!.jsonArray.map { it.jsonPrimitive.content }
+        // Actions that keep a button: never neutral, or Share, links and menus would go with it.
+        for (kept in listOf("shareEntityEndpoint", "watchEndpoint", "browseEndpoint", "urlEndpoint", "showSheetCommand")) {
+            assertFalse(kept, kept in neutral)
+        }
+        assertTrue("signInEndpoint" in rules["prompts"]!!.jsonArray.map { it.jsonPrimitive.content })
+    }
+
+    @Test fun signInUrlsAreEveryInnerTubeCallAndThePagesOnly() {
+        val urls = Regex(SignInStrip.URLS)
+        for (url in listOf(
+            "https://m.youtube.com/youtubei/v1/next?prettyPrint=false",
+            "https://m.youtube.com/youtubei/v1/browse",
+            "https://m.youtube.com/youtubei/v1/search",
+            "https://m.youtube.com/watch?v=dQw4w9WgXcQ&pbj=1",
+        )) {
+            assertTrue(url, urls.containsMatchIn(url))
+        }
+        for (url in listOf("https://m.youtube.com/s/player/abc/base.js", "https://i.ytimg.com/vi/x/hq.jpg", "https://evil.example/youtubei/v1/next")) {
+            assertFalse(url, urls.containsMatchIn(url))
+        }
+    }
 }
