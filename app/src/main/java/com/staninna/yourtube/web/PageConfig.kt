@@ -140,18 +140,18 @@ object PageConfig {
 
     /**
      * Comments, tighter: YouTube spaces each thread for the like, dislike and reply row that
-     * [ACCOUNT_CSS] hides, so the gap stays behind. Threads get 8 px above and below instead of 16 and
-     * the comment its 4 px padding no more, the avatar shrinks from 48 to 32 px, the text drops its
-     * bottom margin, and "Show more replies" (and the replies it opens) sits right under the comment,
-     * lined up with its text, on a 28 px row instead of 40.
+     * [ACCOUNT_CSS] hides, so the gap stays behind. Threads get 12 px above and below instead of 16 and
+     * the comment its 4 px padding no more, the avatar shrinks from 48 to 40 px, the text keeps 2 px
+     * under it, and "Show more replies" (and the replies it opens) sits 6 px under the comment, lined up
+     * with its text, on a 32 px row instead of 40. 8 px, 32 px avatars and a 28 px row read as crammed.
      */
     private val COMMENTS_CSS = listOf(
-        "ytm-comment-thread-renderer{padding-top:8px !important;padding-bottom:8px !important}",
+        "ytm-comment-thread-renderer{padding-top:12px !important;padding-bottom:12px !important}",
         "ytm-comment-renderer{padding-top:0 !important;padding-bottom:0 !important}",
-        "ytm-comment-renderer .comment-icon,ytm-comment-renderer .comment-icon img{width:32px !important;height:32px !important}",
-        ".YtmCommentRendererText{margin-bottom:0 !important}",
-        "ytm-comment-replies-renderer{margin-top:2px !important;margin-left:56px !important}",
-        "ytm-comment-replies-renderer .YtmContinuationItemRendererButton button{height:28px !important;padding-left:0 !important}",
+        "ytm-comment-renderer .comment-icon,ytm-comment-renderer .comment-icon img{width:40px !important;height:40px !important}",
+        ".YtmCommentRendererText{margin-bottom:2px !important}",
+        "ytm-comment-replies-renderer{margin-top:6px !important;margin-left:64px !important}",
+        "ytm-comment-replies-renderer .YtmContinuationItemRendererButton button{height:32px !important;padding-left:0 !important}",
     ).joinToString("\n")
 
     /**

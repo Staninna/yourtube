@@ -176,8 +176,8 @@ class PageConfigTest {
 
     @Test fun commentsCloseTheGapTheHiddenActionRowLeaves() {
         val css = PageConfig.css(Settings())
-        assertTrue(css.contains("ytm-comment-thread-renderer{padding-top:8px !important;padding-bottom:8px !important}"))
-        assertTrue(css.contains("ytm-comment-replies-renderer{margin-top:2px !important;margin-left:56px !important}"))
+        assertTrue(css.contains("ytm-comment-thread-renderer{padding-top:12px !important;padding-bottom:12px !important}"))
+        assertTrue(css.contains("ytm-comment-replies-renderer{margin-top:6px !important;margin-left:64px !important}"))
         // The row it makes room for stays hidden.
         assertTrue(css.lines().any { it.endsWith("{display:none !important}") && ".YtmCommentRendererDetails" in it })
     }
