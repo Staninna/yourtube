@@ -43,8 +43,11 @@ class PageConfigTest {
             val headerActions = css.split('{', '}', ',').map { it.trim() }.filter { "yt-flexible-actions-view-model" in it }
             assertEquals(listOf("yt-page-header-view-model:has(yt-decorated-avatar-view-model) yt-flexible-actions-view-model"), headerActions)
             // Hidden but measured: display:none would make YouTube fold the watch page's actions into More.
-            assertTrue(css.contains(".slim-subscribe-button{visibility:hidden !important}"))
-            assertFalse(css.contains(".slim-subscribe-button,"))
+            // The newer layout's channel bar keeps it the same way.
+            assertTrue(css.lines().contains(
+                ".slim-subscribe-button,.ytCompactChannelBarViewModelButtons yt-subscribe-button-view-model{visibility:hidden !important}",
+            ))
+            assertEquals(1, css.lines().count { "yt-subscribe-button-view-model" in it || "slim-subscribe-button" in it })
         }
     }
 
@@ -72,6 +75,8 @@ class PageConfigTest {
             "navigation-item-view-model:has(a[href*=\"youtube-create\"])",
             "ytm-compact-channel-renderer .modern-subscribe-button",
             "yt-page-header-view-model .ytFlexibleActionsViewModelAction:has(> toggle-button-view-model)",
+            ".fullscreen-action-menu ytm-slim-metadata-toggle-button-renderer",
+            ".fullscreen-action-menu ytm-slim-metadata-button-renderer:has(.icon-bookmark)",
         )) {
             assertTrue(selector, selector in hidden)
         }

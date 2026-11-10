@@ -95,7 +95,9 @@ object PageConfig {
      * (`yt-decorated-avatar-view-model`) tells that header from a playlist's, whose row holds Save,
      * Share and More. On watch pages
      * (`.slim-subscribe-button`) it is invisible but keeps its width: YouTube sizes the action row
-     * around it, and with it gone moves dislike, share, save and report into the More menu.
+     * around it, and with it gone moves dislike, share, save and report into the More menu. The newer
+     * watch layout puts it in the channel bar next to the avatar (`yt-subscribe-button-view-model`
+     * under `.ytCompactChannelBarViewModelButtons`); it is hidden the same way there.
      */
     private val NAG_CSS = listOf(
         "#dialog-container:has(img[src*=\"/img/promos/growth/\"])",
@@ -104,7 +106,9 @@ object PageConfig {
         ".mobile-topbar-header-sign-in-button", "ytm-open-app-button-renderer", "ytm-app-promo-renderer",
         "ytm-inline-survey-renderer", "ytm-brand-video-singleton-renderer",
         "yt-page-header-view-model:has(yt-decorated-avatar-view-model) yt-flexible-actions-view-model",
-    ).joinToString(",") + "{display:none !important}\n.slim-subscribe-button{visibility:hidden !important}"
+    ).joinToString(",") + "{display:none !important}\n" +
+        ".slim-subscribe-button,.ytCompactChannelBarViewModelButtons yt-subscribe-button-view-model" +
+        "{visibility:hidden !important}"
 
     /**
      * Actions that only ask a signed-out viewer to sign in. Under a video: like, dislike and every
@@ -112,12 +116,16 @@ object PageConfig {
      * button in every layout seen, so it stays by position, whatever the page's language. In comments:
      * the row with the like, dislike and reply icons and each comment's menu (Report), and the "Add a
      * comment" box. On posts: like and dislike. In search results: a channel card's Subscribe. On a
-     * playlist: Save, the header's one toggle button. Any link to Google's sign-in page goes too.
+     * playlist: Save, the header's one toggle button. In the fullscreen player's action menu: like and
+     * dislike (its toggle buttons) and Save (by its bookmark icon); Share stays. Any link to Google's
+     * sign-in page goes too.
      */
     private val ACCOUNT_CSS = listOf(
         "ytm-compact-channel-renderer .modern-subscribe-button",
         "yt-page-header-view-model .ytFlexibleActionsViewModelAction:has(> toggle-button-view-model)",
         "like-button-view-model", "dislike-button-view-model",
+        ".fullscreen-action-menu ytm-slim-metadata-toggle-button-renderer",
+        ".fullscreen-action-menu ytm-slim-metadata-button-renderer:has(.icon-bookmark)",
         ".slim-video-action-bar-actions > button-view-model ~ button-view-model",
         ".YtmCommentRendererDetails", "ytm-comment-simplebox-renderer",
         ".ytCommentActionButtonsRendererHostLikeDislikeActionButtons",
