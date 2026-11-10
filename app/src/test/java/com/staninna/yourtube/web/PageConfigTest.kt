@@ -77,6 +77,7 @@ class PageConfigTest {
             "yt-page-header-view-model .ytFlexibleActionsViewModelAction:has(> toggle-button-view-model)",
             ".fullscreen-action-menu ytm-slim-metadata-toggle-button-renderer",
             ".fullscreen-action-menu ytm-slim-metadata-button-renderer:has(.icon-bookmark)",
+            "ytm-media-item .media-item-menu",
         )) {
             assertTrue(selector, selector in hidden)
         }

@@ -119,11 +119,14 @@ object PageConfig {
      * the row with the like, dislike and reply icons and each comment's menu (Report), and the "Add a
      * comment" box. On posts: like and dislike. In search results: a channel card's Subscribe. On a
      * playlist: Save, the header's one toggle button. In the fullscreen player's action menu: like and
-     * dislike (its toggle buttons) and Save (by its bookmark icon); Share stays. Any link to Google's
+     * dislike (its toggle buttons) and Save (by its bookmark icon); Share stays. A video tile's menu
+     * (⋮): signed out it holds Save to Watch later and Save to playlist, which `early.js` takes out of
+     * the data, and a Share YouTube adds itself, which the watch page has too. Any link to Google's
      * sign-in page goes too.
      */
     private val ACCOUNT_CSS = listOf(
         "ytm-compact-channel-renderer .modern-subscribe-button",
+        "ytm-media-item .media-item-menu",
         "yt-page-header-view-model .ytFlexibleActionsViewModelAction:has(> toggle-button-view-model)",
         "like-button-view-model", "dislike-button-view-model",
         ".fullscreen-action-menu ytm-slim-metadata-toggle-button-renderer",
