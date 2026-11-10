@@ -173,4 +173,12 @@ class PageConfigTest {
             assertFalse(url, urls.containsMatchIn(url))
         }
     }
+
+    @Test fun commentsCloseTheGapTheHiddenActionRowLeaves() {
+        val css = PageConfig.css(Settings())
+        assertTrue(css.contains("ytm-comment-thread-renderer{padding-top:8px !important;padding-bottom:8px !important}"))
+        assertTrue(css.contains("ytm-comment-replies-renderer{margin-top:2px !important;margin-left:56px !important}"))
+        // The row it makes room for stays hidden.
+        assertTrue(css.lines().any { it.endsWith("{display:none !important}") && ".YtmCommentRendererDetails" in it })
+    }
 }

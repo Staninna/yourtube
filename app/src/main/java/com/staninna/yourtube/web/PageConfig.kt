@@ -39,6 +39,7 @@ object PageConfig {
         add(HEADER_CSS)
         add(NAG_CSS)
         add(ACCOUNT_CSS)
+        add(COMMENTS_CSS)
         add(DRAWER_CSS)
         add(BRAND_CSS)
         if (settings.adBlocking.isOn(AdLayer.DISPLAY)) add(DISPLAY_ADS_CSS)
@@ -136,6 +137,22 @@ object PageConfig {
         ".ytCommentActionButtonsRendererHostLikeDislikeActionButtons",
         "a[href*=\"accounts.google.com/ServiceLogin\"]",
     ).joinToString(",") + "{display:none !important}"
+
+    /**
+     * Comments, tighter: YouTube spaces each thread for the like, dislike and reply row that
+     * [ACCOUNT_CSS] hides, so the gap stays behind. Threads get 8 px above and below instead of 16 and
+     * the comment its 4 px padding no more, the avatar shrinks from 48 to 32 px, the text drops its
+     * bottom margin, and "Show more replies" (and the replies it opens) sits right under the comment,
+     * lined up with its text, on a 28 px row instead of 40.
+     */
+    private val COMMENTS_CSS = listOf(
+        "ytm-comment-thread-renderer{padding-top:8px !important;padding-bottom:8px !important}",
+        "ytm-comment-renderer{padding-top:0 !important;padding-bottom:0 !important}",
+        "ytm-comment-renderer .comment-icon,ytm-comment-renderer .comment-icon img{width:32px !important;height:32px !important}",
+        ".YtmCommentRendererText{margin-bottom:0 !important}",
+        "ytm-comment-replies-renderer{margin-top:2px !important;margin-left:56px !important}",
+        "ytm-comment-replies-renderer .YtmContinuationItemRendererButton button{height:28px !important;padding-left:0 !important}",
+    ).joinToString("\n")
 
     /**
      * The explore drawer behind the compass keeps YouTube's own topics (Music, Gaming, Podcasts) but
