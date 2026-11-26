@@ -22,6 +22,13 @@
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.Tube">
 
+        <!-- Backup and restore start the app in "restricted mode" with a plain Application instead of
+             TubeApp, so a screen or service opened meanwhile crashes on its TubeApp cast. Android 16+
+             reads this property and starts TubeApp as usual; older versions ignore it. -->
+        <property
+            android:name="android.app.backup.PROPERTY_USE_RESTRICTED_BACKUP_MODE"
+            android:value="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
